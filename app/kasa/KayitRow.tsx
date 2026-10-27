@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatTL } from "@/lib/format";
 import type { KasaKaydi, OdemeSekli, Yon } from "@/lib/types";
 
@@ -46,6 +46,22 @@ export default function KayitRow({
     odemeSekli: value.odemeSekli,
     yon: value.yon,
   });
+
+  useEffect(() => {
+    if (!isDraft) return;
+    const d = value as DraftKayit;
+    setLocal({
+      tarih: d.tarih,
+      firma: d.firma,
+      aciklama: d.aciklama,
+      toplamTutar: d.toplamTutar,
+      alinanTutar: d.alinanTutar,
+      odemeSekli: d.odemeSekli,
+      yon: d.yon,
+    });
+    // Resyncs after the parent resets this draft slot post-save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDraft, value]);
 
   function set<K extends keyof typeof local>(key: K, v: (typeof local)[K]) {
     const next = { ...local, [key]: v };
