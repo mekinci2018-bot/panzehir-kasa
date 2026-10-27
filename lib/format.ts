@@ -1,7 +1,11 @@
 export function formatTL(amount: number): string {
-  return new Intl.NumberFormat("tr-TR", {
-    maximumFractionDigits: 0,
-  }).format(Math.round(amount)) + " TL";
+  return (
+    "₺" +
+    new Intl.NumberFormat("tr-TR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount)
+  );
 }
 
 export function formatDate(iso: string): string {
@@ -39,4 +43,27 @@ export function shiftMonthKey(monthKey: string, delta: number): string {
   const d = new Date(y, m - 1 + delta, 1);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+}
+
+export function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return "İyi geceler";
+  if (hour < 12) return "Günaydın";
+  if (hour < 18) return "İyi günler";
+  return "İyi akşamlar";
+}
+
+export function longDateTR(): string {
+  return new Date().toLocaleDateString("tr-TR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    weekday: "long",
+  });
+}
+
+export function daysSince(iso: string): number {
+  const then = new Date(iso + "T00:00:00");
+  const now = new Date();
+  return Math.floor((now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24));
 }

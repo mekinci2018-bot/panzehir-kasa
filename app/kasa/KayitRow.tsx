@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check, Trash2 } from "lucide-react";
 import { formatTL } from "@/lib/format";
 import type { KasaKaydi, OdemeSekli, Yon } from "@/lib/types";
 
@@ -87,8 +88,15 @@ export default function KayitRow({
     });
   }
 
+  function handleEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && local.firma.trim()) {
+      e.preventDefault();
+      handleSave();
+    }
+  }
+
   return (
-    <tr className="border-t border-[var(--border)] hover:bg-gray-50/60">
+    <tr className="border-t border-[var(--border)]">
       <td className="px-4 py-2 align-top">
         <input
           type="date"
@@ -100,27 +108,33 @@ export default function KayitRow({
       <td className="px-4 py-2 align-top">
         <input
           className="input-sm font-medium"
-          placeholder="Firma / Açıklama"
+          placeholder="Firma adı ya da kişi"
           value={local.firma}
           onChange={(e) => set("firma", e.target.value)}
+          onKeyDown={handleEnter}
         />
         <input
           className="input-sm text-xs text-[var(--muted)]"
-          placeholder="açıklama (opsiyonel)"
+          placeholder="Açıklama (opsiyonel)"
           value={local.aciklama}
           onChange={(e) => set("aciklama", e.target.value)}
+          onKeyDown={handleEnter}
         />
+        {isDraft && !local.firma && (
+          <div className="text-[10px] text-[var(--muted-soft)] px-2 mt-0.5">Enter ile kaydet</div>
+        )}
       </td>
       <td className="px-4 py-2 align-top">
         <input
           type="number"
           className="input-sm"
-          placeholder="0"
+          placeholder="Toplam ₺"
           value={local.toplamTutar}
           onChange={(e) => set("toplamTutar", e.target.value)}
+          onKeyDown={handleEnter}
         />
         {kalan !== 0 && !isDraft && (
-          <div className="text-[11px] text-[var(--accent-amber)] px-2">
+          <div className="text-[11px] text-[var(--accent-orange)] px-2 font-medium">
             Kalan: {formatTL(kalan)}
           </div>
         )}
@@ -137,21 +151,22 @@ export default function KayitRow({
       </td>
       <td className="px-4 py-2 align-top">
         <select
-          className="select-pill w-full"
+          className={`select-pill w-full ${local.yon === "gelen" ? "select-giris" : "select-cikis"}`}
           value={local.yon}
           onChange={(e) => set("yon", e.target.value as Yon)}
         >
-          <option value="gelen">Gelen</option>
-          <option value="giden">Giden</option>
+          <option value="gelen">Giriş</option>
+          <option value="giden">Çıkış</option>
         </select>
       </td>
       <td className="px-4 py-2 align-top">
         <input
           type="number"
           className="input-sm"
-          placeholder="0"
+          placeholder="Peşin ₺"
           value={local.alinanTutar}
           onChange={(e) => set("alinanTutar", e.target.value)}
+          onKeyDown={handleEnter}
         />
       </td>
       <td className="px-4 py-2 align-top">
@@ -162,11 +177,11 @@ export default function KayitRow({
             disabled={saving || (isDraft && !local.firma.trim())}
             title="Kaydet"
           >
-            ✓
+            <Check className="w-4 h-4" />
           </button>
           {!isDraft && onDelete && (
-            <button className="icon-btn" onClick={onDelete} title="Sil">
-              🗑
+            <button className="icon-btn hover:!text-[var(--brand)]" onClick={onDelete} title="Sil">
+              <Trash2 className="w-4 h-4" />
             </button>
           )}
         </div>

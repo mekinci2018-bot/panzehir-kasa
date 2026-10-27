@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { Users, Pencil, Trash2, Plus } from "lucide-react";
 import { useCalisanlar } from "@/lib/hooks";
 import { addCalisan, deleteCalisan, updateCalisan } from "@/lib/db";
 import type { Calisan } from "@/lib/types";
+import PageHeader from "@/components/PageHeader";
+import EmptyState from "@/components/EmptyState";
 
 const empty = {
   adSoyad: "",
@@ -58,65 +61,67 @@ export default function CalisanlarPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-extrabold">Çalışanlar</h1>
-        <p className="text-sm text-[var(--muted)] mt-1">Hızlı iletişim bilgileri.</p>
-      </div>
+    <div className="page-enter flex flex-col gap-6">
+      <PageHeader title="Personel" description="Çalışanların hızlı iletişim ve acil durum bilgileri." />
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[var(--muted)] text-xs uppercase tracking-wide">
-                {FIELDS.map((f) => (
-                  <th key={f.key} className="px-4 py-3 font-semibold">{f.label}</th>
-                ))}
-                <th className="px-4 py-3 font-semibold w-[100px]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {!loading && calisanlar.length === 0 && !adding && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-[var(--muted)]">
-                    Henüz çalışan eklenmedi.
-                  </td>
+        {!loading && calisanlar.length === 0 && !adding ? (
+          <EmptyState
+            icon={Users}
+            title="Henüz personel eklenmedi"
+            description="Aşağıdaki '+ Yeni Personel Ekle' butonuyla ilk kaydı ekleyebilirsin."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-zebra">
+              <thead>
+                <tr className="text-left text-[var(--foreground)] text-xs uppercase tracking-wide bg-gray-50 border-b border-[var(--border)]">
+                  {FIELDS.map((f) => (
+                    <th key={f.key} className="px-4 py-3 font-bold">{f.label}</th>
+                  ))}
+                  <th className="px-4 py-3 font-bold w-[100px]"></th>
                 </tr>
-              )}
-              {calisanlar.map((c) =>
-                editingId === c.id ? (
-                  <EditRow key={c.id} form={form} setForm={setForm} onSave={() => saveEdit(c.id)} onCancel={() => setEditingId(null)} />
-                ) : (
-                  <tr key={c.id} className="border-t border-[var(--border)]">
-                    <td className="px-4 py-3 font-medium">{c.adSoyad}</td>
-                    <td className="px-4 py-3">{c.tcKimlikNo || "-"}</td>
-                    <td className="px-4 py-3">
-                      {c.telefon ? <a className="text-[var(--brand)] hover:underline" href={`tel:${c.telefon}`}>{c.telefon}</a> : "-"}
-                    </td>
-                    <td className="px-4 py-3">{c.adres || "-"}</td>
-                    <td className="px-4 py-3">{c.acilDurumKisisi || "-"}</td>
-                    <td className="px-4 py-3">{c.acilTelefon || "-"}</td>
-                    <td className="px-4 py-3">{c.not || "-"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2 justify-end">
-                        <button className="icon-btn" onClick={() => startEdit(c)} title="Düzenle">✎</button>
-                        <button className="icon-btn" onClick={() => deleteCalisan(c.id)} title="Sil">🗑</button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              )}
-              {adding && (
-                <EditRow form={form} setForm={setForm} onSave={saveNew} onCancel={() => { setAdding(false); setForm(empty); }} />
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {calisanlar.map((c) =>
+                  editingId === c.id ? (
+                    <EditRow key={c.id} form={form} setForm={setForm} onSave={() => saveEdit(c.id)} onCancel={() => setEditingId(null)} />
+                  ) : (
+                    <tr key={c.id} className="border-t border-[var(--border)]">
+                      <td className="px-4 py-3 font-medium">{c.adSoyad}</td>
+                      <td className="px-4 py-3">{c.tcKimlikNo || "-"}</td>
+                      <td className="px-4 py-3">
+                        {c.telefon ? <a className="text-[var(--brand)] hover:underline" href={`tel:${c.telefon}`}>{c.telefon}</a> : "-"}
+                      </td>
+                      <td className="px-4 py-3">{c.adres || "-"}</td>
+                      <td className="px-4 py-3">{c.acilDurumKisisi || "-"}</td>
+                      <td className="px-4 py-3">{c.acilTelefon || "-"}</td>
+                      <td className="px-4 py-3">{c.not || "-"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2 justify-end">
+                          <button className="icon-btn" onClick={() => startEdit(c)} title="Düzenle">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button className="icon-btn hover:!text-[var(--brand)]" onClick={() => deleteCalisan(c.id)} title="Sil">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
+                {adding && (
+                  <EditRow form={form} setForm={setForm} onSave={saveNew} onCancel={() => { setAdding(false); setForm(empty); }} />
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {!adding && (
-        <button className="btn-secondary self-start" onClick={() => setAdding(true)}>
-          + Yeni Çalışan Ekle
+        <button className="btn-secondary self-start inline-flex items-center gap-2" onClick={() => setAdding(true)}>
+          <Plus className="w-4 h-4" /> Yeni Personel Ekle
         </button>
       )}
     </div>

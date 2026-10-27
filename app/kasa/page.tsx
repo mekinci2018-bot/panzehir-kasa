@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Wallet, CreditCard, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import StatCard from "@/components/StatCard";
 import MonthNav from "@/components/MonthNav";
+import PageHeader from "@/components/PageHeader";
 import { useKasaKayitlari } from "@/lib/hooks";
 import { addKasaKaydi, deleteKasaKaydi, updateKasaKaydi } from "@/lib/db";
 import { currentMonthKey, formatTL, todayISO } from "@/lib/format";
@@ -65,7 +67,7 @@ export default function KasaPage() {
     [kayitlar]
   );
 
-  const verecekler = useMemo(
+  const borclar = useMemo(
     () =>
       kayitlar
         .filter((k) => k.yon === "giden" && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
@@ -113,37 +115,41 @@ export default function KasaPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-extrabold">Kasa</h1>
-        <p className="text-sm text-[var(--muted)] mt-1">
-          Yeni işlemleri Excel&apos;de yazar gibi girin. Kaydedilen satırlar Arşiv&apos;de ay ay
-          listelenir.
-        </p>
-      </div>
+    <div className="page-enter flex flex-col gap-8">
+      <PageHeader
+        title="Kasa"
+        description="Yeni işlemleri Excel'de yazar gibi girin — kaydedilen satırlar Arşiv'de ay ay listelenir."
+        showGreeting
+      />
 
       <div className="flex flex-wrap gap-4">
         <StatCard
-          title="Kasadaki Nakit"
+          title="Kasa Bakiyesi"
           value={formatTL(stats.kasadakiNakit)}
-          subtitle="tüm zamanların devreden bakiyesi"
+          subtitle="Elde bulunan nakit para"
+          tone="green"
+          icon={Wallet}
         />
         <StatCard
-          title="Kart / Banka ile Alınan"
+          title="Bu Ay Banka Tahsilatı"
           value={formatTL(stats.kartBuAy)}
-          subtitle="bu aya ait, her ay sıfırlanır"
+          subtitle="Kart ve havale ile gelen, her ay sıfırlanır"
+          tone="blue"
+          icon={CreditCard}
         />
         <StatCard
-          title="Toplam Alacak"
+          title="Tahsil Edilecek"
           value={formatTL(stats.toplamAlacak)}
-          tone="amber"
-          subtitle="tahsil edilmemiş"
+          subtitle="Müşterilerden alınacak toplam"
+          tone="orange"
+          icon={ArrowDownToLine}
         />
         <StatCard
-          title="Toplam Verecek"
+          title="Ödenecek Borç"
           value={formatTL(stats.toplamBorc)}
+          subtitle="Tedarikçilere ödenecek toplam"
           tone="red"
-          subtitle="ödenmemiş borç"
+          icon={ArrowUpFromLine}
         />
       </div>
 
@@ -153,16 +159,21 @@ export default function KasaPage() {
           {loading && <span className="text-xs text-[var(--muted)]">yükleniyor…</span>}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-zebra">
             <thead>
-              <tr className="text-left text-[var(--muted)] text-xs uppercase tracking-wide">
-                <th className="px-4 py-3 font-semibold w-[120px]">Tarih</th>
-                <th className="px-4 py-3 font-semibold">Firma / Açıklama</th>
-                <th className="px-4 py-3 font-semibold w-[130px]">Toplam Tutar</th>
-                <th className="px-4 py-3 font-semibold w-[110px]">Ödeme Şekli</th>
-                <th className="px-4 py-3 font-semibold w-[120px]">Yön</th>
-                <th className="px-4 py-3 font-semibold w-[130px]">Alınan / Ödenen</th>
-                <th className="px-4 py-3 font-semibold w-[80px]"></th>
+              <tr className="text-left text-[var(--foreground)] text-xs uppercase tracking-wide bg-gray-50 border-b border-[var(--border)]">
+                <th className="px-4 py-3 font-bold w-[120px]">Tarih</th>
+                <th className="px-4 py-3 font-bold">Firma / Açıklama</th>
+                <th className="px-4 py-3 font-bold w-[130px]">Toplam Tutar</th>
+                <th className="px-4 py-3 font-bold w-[110px]">Ödeme Şekli</th>
+                <th className="px-4 py-3 font-bold w-[110px]">İşlem</th>
+                <th className="px-4 py-3 font-bold w-[150px]">
+                  Peşin Ödenen
+                  <div className="text-[10px] normal-case font-normal text-[var(--muted)] mt-0.5 leading-tight">
+                    Kalan otomatik Alacak/Borç&apos;a düşer
+                  </div>
+                </th>
+                <th className="px-4 py-3 font-bold w-[80px]"></th>
               </tr>
             </thead>
             <tbody>
@@ -190,8 +201,8 @@ export default function KasaPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <PreviewList title="Alacaklar" href="/alacaklar" items={alacaklar} tone="amber" />
-        <PreviewList title="Verecekler" href="/verecekler" items={verecekler} tone="red" />
+        <PreviewList title="Alacaklar" href="/alacaklar" items={alacaklar} tone="orange" />
+        <PreviewList title="Borçlar" href="/verecekler" items={borclar} tone="red" />
       </div>
     </div>
   );
@@ -206,7 +217,7 @@ function PreviewList({
   title: string;
   href: string;
   items: KasaKaydi[];
-  tone: "amber" | "red";
+  tone: "orange" | "red";
 }) {
   return (
     <div className="card p-5">
@@ -217,7 +228,7 @@ function PreviewList({
         </Link>
       </div>
       {items.length === 0 ? (
-        <p className="text-sm text-[var(--muted)]">Kayıt yok.</p>
+        <p className="text-sm text-[var(--muted)]">Şu an bekleyen kayıt yok.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-[var(--border)]">
           {items.map((k) => (
@@ -226,7 +237,9 @@ function PreviewList({
                 <div className="font-medium">{k.firma}</div>
                 <div className="text-xs text-[var(--muted)]">{k.aciklama || "—"}</div>
               </div>
-              <div className={`font-bold ${tone === "amber" ? "text-[var(--accent-amber)]" : "text-[var(--brand)]"}`}>
+              <div
+                className={`font-bold ${tone === "orange" ? "text-[var(--accent-orange)]" : "text-[var(--brand)]"}`}
+              >
                 {formatTL(k.toplamTutar - k.alinanTutar)}
               </div>
             </li>

@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { monthLabel, shiftMonthKey } from "@/lib/format";
 
 export default function MonthNav({
@@ -14,7 +15,7 @@ export default function MonthNav({
         onClick={() => onChange(shiftMonthKey(monthKey, -1))}
         aria-label="Önceki ay"
       >
-        ‹
+        <ChevronLeft className="w-4 h-4" />
       </button>
       <div className="font-bold text-lg min-w-[140px] text-center">{monthLabel(monthKey)}</div>
       <button
@@ -22,7 +23,7 @@ export default function MonthNav({
         onClick={() => onChange(shiftMonthKey(monthKey, 1))}
         aria-label="Sonraki ay"
       >
-        ›
+        <ChevronRight className="w-4 h-4" />
       </button>
     </div>
   );

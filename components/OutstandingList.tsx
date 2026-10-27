@@ -1,11 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useKasaKayitlari } from "@/lib/hooks";
 import { arsiveGonder, tahsilEt } from "@/lib/db";
-import { formatDate, formatTL } from "@/lib/format";
+import { daysSince, formatDate, formatTL } from "@/lib/format";
 import type { KasaKaydi, Yon } from "@/lib/types";
 import AmountModal from "./AmountModal";
+import PageHeader from "./PageHeader";
+import EmptyState from "./EmptyState";
+
+const OVERDUE_DAYS = 30;
 
 export default function OutstandingList({
   yon,
@@ -13,12 +19,18 @@ export default function OutstandingList({
   subtitle,
   amountLabel,
   actionLabel,
+  icon,
+  emptyTitle,
+  emptyDescription,
 }: {
   yon: Yon;
   title: string;
   subtitle: string;
   amountLabel: string;
   actionLabel: string;
+  icon: LucideIcon;
+  emptyTitle: string;
+  emptyDescription: string;
 }) {
   const { kayitlar, loading } = useKasaKayitlari();
   const [modalFor, setModalFor] = useState<KasaKaydi | null>(null);
@@ -32,59 +44,66 @@ export default function OutstandingList({
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-extrabold">{title}</h1>
-        <p className="text-sm text-[var(--muted)] mt-1">{subtitle}</p>
-      </div>
+    <div className="page-enter flex flex-col gap-6">
+      <PageHeader title={title} description={subtitle} />
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[var(--muted)] text-xs uppercase tracking-wide">
-                <th className="px-5 py-3 font-semibold w-[110px]">Tarih</th>
-                <th className="px-5 py-3 font-semibold">Firma / Kişi</th>
-                <th className="px-5 py-3 font-semibold">Açıklama</th>
-                <th className="px-5 py-3 font-semibold w-[130px]">{amountLabel}</th>
-                <th className="px-5 py-3 font-semibold w-[220px]">İşlem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!loading && items.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-[var(--muted)]">
-                    Kayıt yok — her şey güncel.
-                  </td>
+        {!loading && items.length === 0 ? (
+          <EmptyState icon={icon} title={emptyTitle} description={emptyDescription} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-zebra">
+              <thead>
+                <tr className="text-left text-[var(--foreground)] text-xs uppercase tracking-wide bg-gray-50 border-b border-[var(--border)]">
+                  <th className="px-5 py-3 font-bold w-[120px]">Tarih</th>
+                  <th className="px-5 py-3 font-bold">Firma / Kişi</th>
+                  <th className="px-5 py-3 font-bold">Açıklama</th>
+                  <th className="px-5 py-3 font-bold w-[150px]">{amountLabel}</th>
+                  <th className="px-5 py-3 font-bold w-[220px]">İşlem</th>
                 </tr>
-              )}
-              {items.map((k) => {
-                const kalan = k.toplamTutar - k.alinanTutar;
-                return (
-                  <tr key={k.id} className="border-t border-[var(--border)]">
-                    <td className="px-5 py-3">{formatDate(k.tarih)}</td>
-                    <td className="px-5 py-3 font-medium">{k.firma}</td>
-                    <td className="px-5 py-3 text-[var(--muted)]">{k.aciklama || "—"}</td>
-                    <td className="px-5 py-3 font-bold">{formatTL(kalan)}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex gap-2">
-                        <button className="btn-primary !py-1.5 !px-3 !text-xs" onClick={() => setModalFor(k)}>
-                          {actionLabel}
-                        </button>
-                        <button
-                          className="btn-secondary !py-1.5 !px-3 !text-xs"
-                          onClick={() => arsiveGonder(k.id)}
-                        >
-                          Arşive Gönder
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {items.map((k) => {
+                  const kalan = k.toplamTutar - k.alinanTutar;
+                  const overdue = daysSince(k.tarih) > OVERDUE_DAYS;
+                  return (
+                    <tr
+                      key={k.id}
+                      className={`border-t border-[var(--border)] ${overdue ? "border-l-[3px] border-l-[var(--accent-orange)]" : ""}`}
+                    >
+                      <td className="px-5 py-3">{formatDate(k.tarih)}</td>
+                      <td className="px-5 py-3 font-medium">
+                        <div className="flex items-center gap-2">
+                          {k.firma}
+                          {overdue && (
+                            <span className="badge badge-overdue">
+                              <AlertTriangle className="w-3 h-3" /> Gecikmiş
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-[var(--muted)]">{k.aciklama || "—"}</td>
+                      <td className="px-5 py-3 font-bold">{formatTL(kalan)}</td>
+                      <td className="px-5 py-3">
+                        <div className="flex gap-2">
+                          <button className="btn-primary !py-1.5 !px-3 !text-xs" onClick={() => setModalFor(k)}>
+                            {actionLabel}
+                          </button>
+                          <button
+                            className="btn-secondary !py-1.5 !px-3 !text-xs"
+                            onClick={() => arsiveGonder(k.id)}
+                          >
+                            Arşive Gönder
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {modalFor && (
