@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Panzehir Reklam — Kasa Defteri
 
-## Getting Started
+Nakit/kart kasa takibi, alacaklar, verecekler, arşiv, banka bilgileri ve
+çalışanlar için basit bir kasa defteri uygulaması.
 
-First, run the development server:
+## Geliştirme
 
 ```bash
+npm install
+cp .env.local.example .env.local   # Firebase config değerlerini doldurun
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Firebase kurulumu
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. [Firebase Console](https://console.firebase.google.com)'da proje açın.
+2. Build > Firestore Database > "Create database" (production mode).
+3. Build > Authentication > Sign-in method > **Anonymous**'u etkinleştirin.
+4. Project settings > General > "Your apps" > Web app ekleyip verilen
+   `firebaseConfig` değerlerini `.env.local` dosyasına yazın.
+5. Firestore > Rules sekmesine bu reponun kök dizinindeki `firestore.rules`
+   dosyasının içeriğini yapıştırıp yayınlayın.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Dağıtım
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Vercel'e bu repo import edilip, yukarıdaki altı `NEXT_PUBLIC_FIREBASE_*`
+değişkeni proje ayarlarında (Environment Variables) tanımlanarak deploy
+edilir.
