@@ -15,7 +15,9 @@ npm run dev
 
 1. [Firebase Console](https://console.firebase.google.com)'da proje açın.
 2. Build > Firestore Database > "Create database" (production mode).
-3. Build > Authentication > Sign-in method > **Anonymous**'u etkinleştirin.
+3. Build > Authentication > Sign-in method > **Email/Password**'ü etkinleştirin.
+   Users sekmesinden `kasa@panzehir-kasa.app` kullanıcısını ekleyin; şifresi
+   uygulamaya girişte kullanılan 6 haneli şifredir (koda yazılmaz).
 4. Project settings > General > "Your apps" > Web app ekleyip verilen
    `firebaseConfig` değerlerini `.env.local` dosyasına yazın.
 5. Firestore > Rules sekmesine bu reponun kök dizinindeki `firestore.rules`

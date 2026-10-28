@@ -81,6 +81,16 @@ body {
   animation: drawer-in 0.25s ease both;
 }
 
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.pin-shake {
+  animation: pin-shake 0.35s ease;
+}
+
 /* Component classes live in a layer so Tailwind utilities can override them without "!". */
 @layer components {
   .card {

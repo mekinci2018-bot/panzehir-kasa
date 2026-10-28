@@ -2,8 +2,10 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Only the shared PIN account (KASA_EMAIL in lib/firebase.ts) may read or write.
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null
+        && request.auth.token.email == "kasa@panzehir-kasa.app";
     }
   }
 }

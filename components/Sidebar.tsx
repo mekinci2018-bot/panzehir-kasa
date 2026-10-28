@@ -12,7 +12,9 @@ import {
   Users,
   Menu,
   X,
+  Lock,
 } from "lucide-react";
+import { logout } from "@/lib/firebase";
 import Logo from "./Logo";
 
 const NAV = [
@@ -50,6 +52,20 @@ function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigat
   );
 }
 
+function LockButton() {
+  return (
+    <div className="px-3 py-4">
+      <button
+        onClick={() => logout()}
+        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-[var(--sidebar-text)]/70 hover:bg-white/[0.04] hover:text-white transition-colors"
+      >
+        <Lock className="w-[16px] h-[16px] shrink-0" strokeWidth={1.75} />
+        Kilitle
+      </button>
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -83,7 +99,7 @@ export default function Sidebar() {
             </div>
             <div className="h-px bg-white/[0.06] mx-4" />
             <NavLinks pathname={pathname} onNavigate={() => setOpen(false)} />
-            <div className="px-5 py-4 text-[11px] text-[var(--sidebar-text)]/60">Panzehir Reklam</div>
+            <LockButton />
           </aside>
         </div>
       )}
@@ -96,7 +112,7 @@ export default function Sidebar() {
           </div>
         </div>
         <NavLinks pathname={pathname} />
-        <div className="px-6 py-5 text-[11px] text-[var(--sidebar-text)]/40">© Panzehir Reklam</div>
+        <LockButton />
       </aside>
     </>
   );
