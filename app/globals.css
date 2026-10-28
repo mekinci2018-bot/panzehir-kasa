@@ -1,41 +1,43 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f3f4f7;
+  --background: #f7f7f8;
   --surface: #ffffff;
-  --foreground: #1b1b2e;
-  --muted: #6b7280;
-  --muted-soft: #9ca3af;
-  --border: #e7e8ee;
+  --surface-hover: #fafafb;
+  --foreground: #16161d;
+  --muted: #6e6e7a;
+  --muted-soft: #a3a3ae;
+  --border: #ececf0;
+  --border-strong: #dcdce3;
+
+  --ink: #1c1b33;
+  --ink-hover: #2b2a4a;
 
   --brand: #e21d24;
   --brand-dark: #b8151b;
-  --brand-soft: #fdecec;
-  --navy: #2e2a68;
+  --brand-soft: #fdf0f0;
 
-  --sidebar-bg: #15122c;
-  --sidebar-bg-elevated: #1e1a46;
-  --sidebar-border: #2b2658;
-  --sidebar-text: #c6c4de;
-  --sidebar-text-active: #ffffff;
+  --sidebar-bg: #14132a;
+  --sidebar-text: #a9a8c2;
 
-  --accent-green: #16a34a;
-  --accent-green-soft: #eafbf1;
-  --accent-blue: #2563eb;
-  --accent-blue-soft: #eef4ff;
-  --accent-orange: #ea580c;
-  --accent-orange-soft: #fff4ec;
-  --accent-red: #e21d24;
-  --accent-red-soft: #fdecec;
+  --accent-green: #15803d;
+  --accent-green-soft: #f0f8f3;
+  --accent-blue: #3b5bdb;
+  --accent-blue-soft: #f1f4fd;
+  --accent-orange: #c2570c;
+  --accent-orange-soft: #fdf5ee;
+  --accent-red: #d0242a;
+  --accent-red-soft: #fdf1f1;
 
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 16px -4px rgba(16, 24, 40, 0.08);
-  --shadow-card-hover: 0 2px 4px rgba(16, 24, 40, 0.05), 0 10px 24px -6px rgba(16, 24, 40, 0.12);
+  --focus-ring: rgba(28, 27, 51, 0.12);
+  --shadow-card: 0 1px 2px rgba(16, 16, 32, 0.03);
+  --shadow-pop: 0 12px 32px -12px rgba(16, 16, 32, 0.18);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -46,13 +48,15 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), "Segoe UI", Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), "Segoe UI", Arial, Helvetica, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  letter-spacing: -0.006em;
 }
 
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -61,165 +65,7 @@ body {
 }
 
 .page-enter {
-  animation: fade-in-up 0.35s ease both;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow-card);
-  transition: box-shadow 0.2s ease;
-}
-
-.card-hover:hover {
-  box-shadow: var(--shadow-card-hover);
-}
-
-.input-sm {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 14px;
-  width: 100%;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.input-sm:hover {
-  background: #f9fafb;
-}
-
-.input-sm:focus {
-  outline: none;
-  border-color: var(--brand);
-  background: #ffffff;
-  box-shadow: 0 0 0 3px var(--brand-soft);
-}
-
-.input-sm::placeholder {
-  color: var(--muted-soft);
-}
-
-.select-pill {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 5px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  background: #f3f4f6;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.select-giris {
-  background: var(--accent-green-soft);
-  color: var(--accent-green);
-  border-color: transparent;
-}
-
-.select-cikis {
-  background: var(--accent-red-soft);
-  color: var(--accent-red);
-  border-color: transparent;
-}
-
-.btn-primary {
-  background: var(--brand);
-  color: white;
-  font-weight: 600;
-  font-size: 14px;
-  padding: 9px 16px;
-  border-radius: 10px;
-  transition: background 0.15s, transform 0.1s;
-}
-
-.btn-primary:hover {
-  background: var(--brand-dark);
-}
-
-.btn-primary:active {
-  transform: scale(0.98);
-}
-
-.btn-secondary {
-  background: #f3f4f6;
-  color: var(--foreground);
-  font-weight: 500;
-  font-size: 14px;
-  padding: 9px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  transition: background 0.15s;
-}
-
-.btn-secondary:hover {
-  background: #e9eaf0;
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: white;
-  color: var(--muted);
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.icon-btn:hover {
-  background: #f3f4f6;
-  color: var(--foreground);
-}
-
-.table-zebra tbody tr:nth-child(even) {
-  background: #fafafc;
-}
-
-.table-zebra tbody tr {
-  transition: background 0.12s ease;
-}
-
-.table-zebra tbody tr:hover {
-  background: #f4f5fb;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.badge-giris {
-  background: var(--accent-green-soft);
-  color: var(--accent-green);
-}
-
-.badge-cikis {
-  background: var(--accent-red-soft);
-  color: var(--accent-red);
-}
-
-.badge-overdue {
-  background: var(--accent-orange-soft);
-  color: var(--accent-orange);
-}
-
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 999px;
+  animation: fade-in-up 0.3s ease both;
 }
 
 @keyframes drawer-in {
@@ -233,4 +79,261 @@ body {
 
 .drawer-in {
   animation: drawer-in 0.25s ease both;
+}
+
+/* Component classes live in a layer so Tailwind utilities can override them without "!". */
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* Tables */
+  .data-table th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .data-table tbody tr:first-child td {
+    border-top: none;
+  }
+
+  .data-table tbody tr {
+    transition: background 0.12s ease;
+  }
+
+  .data-table tbody tr:hover {
+    background: var(--surface-hover);
+  }
+
+  /* Kasa entry rows are denser: inputs carry their own padding. */
+  .data-table .kasa-row td {
+    padding: 6px 10px;
+  }
+
+  .data-table .kasa-row[data-draft] td {
+    border-top-style: dashed;
+  }
+
+  /* Inputs */
+  .input-sm {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    padding: 6px 8px;
+    font-size: 13.5px;
+    width: 100%;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  }
+
+  .input-sm:hover {
+    background: #f6f6f8;
+  }
+
+  .input-sm:focus {
+    outline: none;
+    border-color: var(--border-strong);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .input-sm::placeholder,
+  .input-field::placeholder {
+    color: var(--muted-soft);
+  }
+
+  /* Hide number spinners: amounts are typed, not clicked. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  .input-field {
+    width: 100%;
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-size: 14px;
+    background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .input-field:focus {
+    outline: none;
+    border-color: var(--ink);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .field-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .select-field {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 6px 8px;
+    font-size: 13px;
+    background: #fff;
+    color: var(--foreground);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .select-field:hover {
+    border-color: var(--border-strong);
+  }
+
+  .select-field:focus {
+    outline: none;
+    border-color: var(--border-strong);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .select-field:disabled {
+    cursor: not-allowed;
+    background: #f6f6f8;
+  }
+
+  .select-field-md {
+    padding: 8px 10px;
+    font-size: 14px;
+    border-color: var(--border-strong);
+  }
+
+  .select-giris {
+    color: var(--accent-green);
+    background: var(--accent-green-soft);
+    border-color: transparent;
+    font-weight: 500;
+  }
+
+  .select-cikis {
+    color: var(--accent-red);
+    background: var(--accent-red-soft);
+    border-color: transparent;
+    font-weight: 500;
+  }
+
+  /* Buttons */
+  .btn-primary {
+    background: var(--ink);
+    color: white;
+    font-weight: 500;
+    font-size: 13.5px;
+    padding: 8px 14px;
+    border-radius: 9px;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .btn-primary:hover {
+    background: var(--ink-hover);
+  }
+
+  .btn-primary:active,
+  .btn-secondary:active {
+    transform: scale(0.98);
+  }
+
+  .btn-secondary {
+    background: #fff;
+    color: var(--foreground);
+    font-weight: 500;
+    font-size: 13.5px;
+    padding: 8px 14px;
+    border-radius: 9px;
+    border: 1px solid var(--border-strong);
+    transition: background 0.15s;
+  }
+
+  .btn-secondary:hover {
+    background: #f6f6f8;
+  }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    color: var(--muted-soft);
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .icon-btn:hover {
+    background: #f1f1f4;
+    color: var(--foreground);
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .badge-giris {
+    background: var(--accent-green-soft);
+    color: var(--accent-green);
+  }
+
+  .badge-cikis {
+    background: var(--accent-red-soft);
+    color: var(--accent-red);
+  }
+
+  .badge-veresiye {
+    background: #f1f1f6;
+    color: var(--ink);
+  }
+
+  .badge-overdue {
+    background: var(--accent-orange-soft);
+    color: var(--accent-orange);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d9d9e0;
+  border-radius: 999px;
+  border: 2px solid var(--background);
 }

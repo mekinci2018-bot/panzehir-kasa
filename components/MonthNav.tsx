@@ -17,7 +17,7 @@ export default function MonthNav({
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
-      <div className="font-bold text-lg min-w-[140px] text-center">{monthLabel(monthKey)}</div>
+      <div className="font-semibold text-[15px] min-w-[130px] text-center">{monthLabel(monthKey)}</div>
       <button
         className="icon-btn"
         onClick={() => onChange(shiftMonthKey(monthKey, 1))}

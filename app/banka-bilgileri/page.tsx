@@ -1,21 +1,42 @@
 "use client";
 
-import { useState } from "react";
-import { Landmark, Copy, Check, Pencil, Trash2, Plus } from "lucide-react";
-import { useBankaHesaplari } from "@/lib/hooks";
+import { useMemo, useState } from "react";
+import { Landmark, Copy, Check, Pencil, Trash2, Plus, ChevronDown, EyeOff, RotateCcw } from "lucide-react";
+import { useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
 import { addBankaHesabi, deleteBankaHesabi, updateBankaHesabi } from "@/lib/db";
+import { tumHareketler, signed, type Hareket } from "@/lib/hareketler";
+import { formatDate, formatTL } from "@/lib/format";
 import type { BankaHesabi } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 
 const empty = { banka: "", hesapSahibi: "", iban: "", aciklama: "" };
+const SON_HAREKET = 3;
 
 export default function BankaBilgileriPage() {
   const { hesaplar, loading } = useBankaHesaplari();
+  const { kayitlar, loading: kayitlarLoading } = useKasaKayitlari();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [adding, setAdding] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Havale movements grouped by account, newest first.
+  const hareketMap = useMemo(() => {
+    const map = new Map<string, Hareket[]>();
+    for (const h of tumHareketler(kayitlar)) {
+      if (h.odemeSekli !== "havale" || !h.bankaHesapId) continue;
+      if (!map.has(h.bankaHesapId)) map.set(h.bankaHesapId, []);
+      map.get(h.bankaHesapId)!.push(h);
+    }
+    for (const list of map.values()) list.sort((a, b) => (a.tarih < b.tarih ? 1 : -1));
+    return map;
+  }, [kayitlar]);
+
+  const siraliHesaplar = useMemo(
+    () => [...hesaplar].sort((a, b) => Number(!!a.pasif) - Number(!!b.pasif)),
+    [hesaplar]
+  );
 
   function startEdit(h: BankaHesabi) {
     setEditingId(h.id);
@@ -35,83 +56,190 @@ export default function BankaBilgileriPage() {
     setAdding(false);
   }
 
-  async function copy(h: BankaHesabi) {
-    try {
-      await navigator.clipboard.writeText(h.iban.replace(/\s/g, ""));
-      setCopiedId(h.id);
-      setTimeout(() => setCopiedId(null), 1500);
-    } catch {}
-  }
-
   return (
     <div className="page-enter flex flex-col gap-6">
-      <PageHeader title="Banka Hesapları" description="İşletmenin banka ve IBAN bilgileri — müşterilere paylaşmak için hızlıca kopyalanabilir." />
-
-      <div className="card overflow-hidden">
-        {!loading && hesaplar.length === 0 && !adding ? (
-          <EmptyState
-            icon={Landmark}
-            title="Henüz banka hesabı eklenmedi"
-            description="Aşağıdaki '+ Yeni Banka Hesabı Ekle' butonuyla ilk hesabını ekleyebilirsin."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm table-zebra">
-              <thead>
-                <tr className="text-left text-[var(--foreground)] text-xs uppercase tracking-wide bg-gray-50 border-b border-[var(--border)]">
-                  <th className="px-5 py-3 font-bold">Banka</th>
-                  <th className="px-5 py-3 font-bold">Hesap Sahibi</th>
-                  <th className="px-5 py-3 font-bold">IBAN</th>
-                  <th className="px-5 py-3 font-bold">Açıklama</th>
-                  <th className="px-5 py-3 font-bold w-[190px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {hesaplar.map((h) =>
-                  editingId === h.id ? (
-                    <EditRow key={h.id} form={form} setForm={setForm} onSave={() => saveEdit(h.id)} onCancel={() => setEditingId(null)} />
-                  ) : (
-                    <tr key={h.id} className="border-t border-[var(--border)]">
-                      <td className="px-5 py-3 font-medium">{h.banka}</td>
-                      <td className="px-5 py-3">{h.hesapSahibi}</td>
-                      <td className="px-5 py-3 font-mono tracking-wide">{h.iban}</td>
-                      <td className="px-5 py-3 text-[var(--muted)]">{h.aciklama}</td>
-                      <td className="px-5 py-3">
-                        <div className="flex gap-2 justify-end">
-                          <button className="btn-secondary !py-1.5 !px-3 !text-xs inline-flex items-center gap-1.5" onClick={() => copy(h)}>
-                            {copiedId === h.id ? <Check className="w-3.5 h-3.5 text-[var(--accent-green)]" /> : <Copy className="w-3.5 h-3.5" />}
-                            {copiedId === h.id ? "Kopyalandı" : "Kopyala"}
-                          </button>
-                          <button className="icon-btn" onClick={() => startEdit(h)} title="Düzenle">
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button className="icon-btn hover:!text-[var(--brand)]" onClick={() => deleteBankaHesabi(h.id)} title="Sil">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                )}
-                {adding && (
-                  <EditRow form={form} setForm={setForm} onSave={saveNew} onCancel={() => { setAdding(false); setForm(empty); }} />
-                )}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <PageHeader
+          title="Banka Hesapları"
+          description="Hesap bilgileri ve her hesaba yapılan havalelerin bakiyesi."
+        />
+        {!adding && (
+          <button className="btn-primary inline-flex items-center gap-2" onClick={() => { setAdding(true); setForm(empty); }}>
+            <Plus className="w-4 h-4" /> Yeni Hesap
+          </button>
         )}
       </div>
 
-      {!adding && (
-        <button className="btn-secondary self-start inline-flex items-center gap-2" onClick={() => setAdding(true)}>
-          <Plus className="w-4 h-4" /> Yeni Banka Hesabı Ekle
-        </button>
+      {!loading && hesaplar.length === 0 && !adding && (
+        <div className="card">
+          <EmptyState
+            icon={Landmark}
+            title="Henüz banka hesabı eklenmedi"
+            description="'Yeni Hesap' ile ilk hesabını ekle. Kasa'da 'Banka Havalesi' seçtiğinde bu hesaplar listelenir."
+          />
+        </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {adding && (
+          <HesapForm form={form} setForm={setForm} onSave={saveNew} onCancel={() => { setAdding(false); setForm(empty); }} />
+        )}
+        {siraliHesaplar.map((h) =>
+          editingId === h.id ? (
+            <HesapForm key={h.id} form={form} setForm={setForm} onSave={() => saveEdit(h.id)} onCancel={() => setEditingId(null)} />
+          ) : (
+            <HesapKarti
+              key={h.id}
+              hesap={h}
+              hareketler={hareketMap.get(h.id) ?? []}
+              open={openId === h.id}
+              onToggle={() => setOpenId(openId === h.id ? null : h.id)}
+              onEdit={() => startEdit(h)}
+              onDelete={() => deleteBankaHesabi(h.id)}
+              onTogglePasif={() => updateBankaHesabi(h.id, { pasif: !h.pasif })}
+              silinebilir={!kayitlarLoading && !hareketMap.has(h.id)}
+            />
+          )
+        )}
+      </div>
     </div>
   );
 }
 
-function EditRow({
+function HesapKarti({
+  hesap,
+  hareketler,
+  open,
+  onToggle,
+  onEdit,
+  onDelete,
+  onTogglePasif,
+  silinebilir,
+}: {
+  hesap: BankaHesabi;
+  hareketler: Hareket[];
+  open: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onTogglePasif: () => void;
+  silinebilir: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const gelen = hareketler.filter((h) => h.yon === "gelen").reduce((s, h) => s + h.tutar, 0);
+  const giden = hareketler.filter((h) => h.yon === "giden").reduce((s, h) => s + h.tutar, 0);
+  const bakiye = hareketler.reduce((s, h) => s + signed(h), 0);
+  const gorunen = open ? hareketler : hareketler.slice(0, SON_HAREKET);
+
+  async function copy(e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(hesap.iban.replace(/\s/g, ""));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  }
+
+  return (
+    <div className={`card overflow-hidden ${hesap.pasif ? "opacity-60" : ""}`}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onToggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
+        className="p-5 cursor-pointer hover:bg-[var(--surface-hover)] transition-colors"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="font-semibold truncate flex items-center gap-2">
+              {hesap.banka || "Banka"}
+              {hesap.pasif && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Pasif</span>}
+            </div>
+            <div className="text-xs text-[var(--muted)] truncate">
+              {[hesap.hesapSahibi, hesap.aciklama].filter(Boolean).join(" · ") || "—"}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">Bakiye</div>
+            <div className={`tabular text-lg font-semibold ${bakiye < 0 ? "text-[var(--brand)]" : ""}`}>{formatTL(bakiye)}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <button
+            className="font-mono text-[13px] tracking-wide text-[var(--muted)] hover:text-[var(--foreground)] inline-flex items-center gap-1.5 min-w-0"
+            onClick={copy}
+            title="IBAN'ı kopyala"
+          >
+            <span className="truncate">{hesap.iban || "IBAN yok"}</span>
+            {copied ? <Check className="w-3.5 h-3.5 text-[var(--accent-green)] shrink-0" /> : <Copy className="w-3.5 h-3.5 shrink-0" />}
+          </button>
+          <div className="text-xs text-[var(--muted)] tabular shrink-0">
+            <span className="text-[var(--accent-green)]">+{formatTL(gelen)}</span>
+            <span className="mx-1.5 text-[var(--border-strong)]">/</span>
+            <span>−{formatTL(giden)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-[var(--border)]">
+        {hareketler.length === 0 ? (
+          <div className="px-5 py-4 text-xs text-[var(--muted)]">Bu hesaba bağlı havale yok.</div>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {gorunen.map((h, i) => (
+              <li key={`${h.kayitId}-${i}`} className="px-5 py-2.5 flex items-center justify-between gap-4 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate">{h.firma}</div>
+                  <div className="text-xs text-[var(--muted)] tabular">
+                    {formatDate(h.tarih)}
+                    {h.aciklama ? ` · ${h.aciklama}` : ""}
+                  </div>
+                </div>
+                <div className={`tabular font-medium shrink-0 ${h.yon === "gelen" ? "text-[var(--accent-green)]" : ""}`}>
+                  {h.yon === "gelen" ? "+" : "−"}
+                  {formatTL(h.tutar)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="px-5 py-2 flex items-center justify-between border-t border-[var(--border)]">
+          {hareketler.length > SON_HAREKET ? (
+            <button className="text-xs text-[var(--muted)] hover:text-[var(--foreground)] inline-flex items-center gap-1" onClick={onToggle}>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+              {open ? "Daha az göster" : `Tüm hareketler (${hareketler.length})`}
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-1">
+            <button className="icon-btn" onClick={onEdit} title="Düzenle">
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            {/* Accounts with movements can't be deleted, only deactivated, so history stays intact. */}
+            {!silinebilir || hesap.pasif ? (
+              <button
+                className="text-xs text-[var(--muted)] hover:text-[var(--foreground)] inline-flex items-center gap-1 px-2 h-[30px] rounded-lg hover:bg-[#f1f1f4]"
+                onClick={onTogglePasif}
+                title={hesap.pasif ? "Yeni işlemlerde tekrar listelensin" : "Yeni işlemlerde listelenmesin; hareketleri görünmeye devam eder"}
+              >
+                {hesap.pasif ? <RotateCcw className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                {hesap.pasif ? "Aktif yap" : "Pasif yap"}
+              </button>
+            ) : (
+              <button className="icon-btn hover:!text-[var(--brand)]" onClick={onDelete} title="Sil">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HesapForm({
   form,
   setForm,
   onSave,
@@ -123,25 +251,29 @@ function EditRow({
   onCancel: () => void;
 }) {
   return (
-    <tr className="border-t border-[var(--border)] bg-gray-50/60">
-      <td className="px-5 py-2">
-        <input className="input-sm bg-white border border-[var(--border)]" value={form.banka} onChange={(e) => setForm({ ...form, banka: e.target.value })} placeholder="Banka adı" />
-      </td>
-      <td className="px-5 py-2">
-        <input className="input-sm bg-white border border-[var(--border)]" value={form.hesapSahibi} onChange={(e) => setForm({ ...form, hesapSahibi: e.target.value })} placeholder="Hesap sahibi" />
-      </td>
-      <td className="px-5 py-2">
-        <input className="input-sm bg-white border border-[var(--border)] font-mono" value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="TR.." />
-      </td>
-      <td className="px-5 py-2">
-        <input className="input-sm bg-white border border-[var(--border)]" value={form.aciklama} onChange={(e) => setForm({ ...form, aciklama: e.target.value })} placeholder="Açıklama" />
-      </td>
-      <td className="px-5 py-2">
-        <div className="flex gap-2 justify-end">
-          <button className="btn-primary !py-1.5 !px-3 !text-xs" onClick={onSave}>Kaydet</button>
-          <button className="btn-secondary !py-1.5 !px-3 !text-xs" onClick={onCancel}>Vazgeç</button>
+    <div className="card p-5 flex flex-col gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="field-label">Banka</label>
+          <input className="input-field" autoFocus value={form.banka} onChange={(e) => setForm({ ...form, banka: e.target.value })} placeholder="Banka adı" />
         </div>
-      </td>
-    </tr>
+        <div>
+          <label className="field-label">Hesap sahibi</label>
+          <input className="input-field" value={form.hesapSahibi} onChange={(e) => setForm({ ...form, hesapSahibi: e.target.value })} placeholder="Hesap sahibi" />
+        </div>
+      </div>
+      <div>
+        <label className="field-label">IBAN</label>
+        <input className="input-field font-mono" value={form.iban} onChange={(e) => setForm({ ...form, iban: e.target.value })} placeholder="TR.." />
+      </div>
+      <div>
+        <label className="field-label">Açıklama</label>
+        <input className="input-field" value={form.aciklama} onChange={(e) => setForm({ ...form, aciklama: e.target.value })} placeholder="Örn. TL vadesiz" />
+      </div>
+      <div className="flex gap-2 justify-end mt-1">
+        <button className="btn-secondary" onClick={onCancel}>Vazgeç</button>
+        <button className="btn-primary" onClick={onSave}>Kaydet</button>
+      </div>
+    </div>
   );
 }

@@ -26,7 +26,7 @@ const NAV = [
 
 function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigate?: () => void }) {
   return (
-    <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
+    <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
       {NAV.map((item) => {
         const active = pathname === item.href || pathname?.startsWith(item.href + "/");
         const Icon = item.icon;
@@ -35,13 +35,13 @@ function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigat
             key={item.href}
             href={item.href}
             onClick={onNavigate}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+            className={`relative flex items-center gap-3 px-3 py-2 rounded-lg text-[13.5px] transition-colors ${
               active
-                ? "bg-[var(--brand)] text-white shadow-[0_4px_12px_-2px_rgba(226,29,36,0.5)]"
-                : "text-[var(--sidebar-text)] hover:bg-white/5 hover:text-white"
+                ? "bg-white/[0.07] text-white font-medium before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:rounded-full before:bg-[var(--brand)]"
+                : "text-[var(--sidebar-text)] hover:bg-white/[0.04] hover:text-white"
             }`}
           >
-            <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
+            <Icon className={`w-[17px] h-[17px] shrink-0 ${active ? "text-[var(--brand)]" : ""}`} strokeWidth={1.75} />
             {item.label}
           </Link>
         );
@@ -81,23 +81,22 @@ export default function Sidebar() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="h-px bg-[var(--sidebar-border)] mx-4" />
+            <div className="h-px bg-white/[0.06] mx-4" />
             <NavLinks pathname={pathname} onNavigate={() => setOpen(false)} />
             <div className="px-5 py-4 text-[11px] text-[var(--sidebar-text)]/60">Panzehir Reklam</div>
           </aside>
         </div>
       )}
 
-      <aside className="hidden md:flex w-64 shrink-0 h-screen sticky top-0 bg-[var(--sidebar-bg)] flex-col">
-        <div className="px-4 pt-5 pb-4">
+      <aside className="hidden md:flex w-60 shrink-0 h-screen sticky top-0 bg-[var(--sidebar-bg)] flex-col">
+        <div className="px-6 pt-7 pb-6">
           <Logo />
-          <div className="text-[13px] text-[var(--sidebar-text)] mt-3 tracking-wide font-medium">
+          <div className="text-[10.5px] text-[var(--sidebar-text)]/70 mt-3 uppercase tracking-[0.18em]">
             Kasa Defteri
           </div>
         </div>
-        <div className="h-px bg-[var(--sidebar-border)] mx-4" />
         <NavLinks pathname={pathname} />
-        <div className="px-5 py-4 text-[11px] text-[var(--sidebar-text)]/50">Panzehir Reklam</div>
+        <div className="px-6 py-5 text-[11px] text-[var(--sidebar-text)]/40">© Panzehir Reklam</div>
       </aside>
     </>
   );

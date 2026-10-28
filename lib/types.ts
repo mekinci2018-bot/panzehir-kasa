@@ -1,6 +1,15 @@
-export type OdemeSekli = "nakit" | "kart";
+export type OdemeSekli = "nakit" | "kart" | "havale";
 export type Yon = "gelen" | "giden";
 export type KayitDurum = "aktif" | "tamamlandi" | "arsiv";
+
+// A payment/collection made after the record was created (from Alacaklar/Borçlar).
+export interface Odeme {
+  tarih: string; // YYYY-MM-DD
+  tutar: number;
+  odemeSekli: OdemeSekli;
+  bankaHesapId?: string;
+  createdAt: number;
+}
 
 export interface KasaKaydi {
   id: string;
@@ -11,6 +20,12 @@ export interface KasaKaydi {
   toplamTutar: number;
   alinanTutar: number;
   odemeSekli: OdemeSekli;
+  bankaHesapId?: string; // only for odemeSekli "havale"; absent on older records
+  // alinanTutar includes these; the remainder is the upfront (peşin) part.
+  // Older records have no odemeler, so all of alinanTutar counts as upfront.
+  odemeler?: Odeme[];
+  kaynak?: "veresiye"; // added from Alacaklar/Borçlar as credit, not via a Kasa row
+  vadeTarihi?: string; // YYYY-MM-DD, optional due date
   yon: Yon;
   durum: KayitDurum;
   createdAt: number;
@@ -23,6 +38,7 @@ export interface BankaHesabi {
   hesapSahibi: string;
   iban: string;
   aciklama: string;
+  pasif?: boolean; // hidden from new transactions; history and balance stay visible
 }
 
 export interface Calisan {

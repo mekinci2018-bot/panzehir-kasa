@@ -2,15 +2,17 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Wallet, CreditCard, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
-import StatCard from "@/components/StatCard";
+import StatStrip from "@/components/StatStrip";
 import MonthNav from "@/components/MonthNav";
 import PageHeader from "@/components/PageHeader";
-import { useKasaKayitlari } from "@/lib/hooks";
+import { useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
 import { addKasaKaydi, deleteKasaKaydi, updateKasaKaydi } from "@/lib/db";
-import { currentMonthKey, formatTL, todayISO } from "@/lib/format";
+import { tumHareketler, signed } from "@/lib/hareketler";
+import { currentMonthKey, formatTL, monthKeyOf, todayISO } from "@/lib/format";
 import type { KasaKaydi } from "@/lib/types";
 import KayitRow, { type DraftKayit } from "./KayitRow";
+
+const DRAFT_COUNT = 5;
 
 const emptyDraft = (): DraftKayit => ({
   tarih: todayISO(),
@@ -19,42 +21,62 @@ const emptyDraft = (): DraftKayit => ({
   toplamTutar: "",
   alinanTutar: "",
   odemeSekli: "nakit",
+  bankaHesapId: "",
   yon: "gelen",
 });
 
+interface DraftSlot {
+  key: number;
+  value: DraftKayit;
+}
+
+let draftSeq = 0;
+const newSlot = (): DraftSlot => ({ key: ++draftSeq, value: emptyDraft() });
+
+function focusFirstEmptyDraft() {
+  requestAnimationFrame(() => {
+    const inputs = document.querySelectorAll<HTMLInputElement>('tr[data-draft] input[data-field="firma"]');
+    const target = [...inputs].find((i) => !i.value) ?? inputs[0];
+    target?.focus();
+  });
+}
+
 export default function KasaPage() {
   const { kayitlar, loading } = useKasaKayitlari();
+  const { hesaplar } = useBankaHesaplari();
   const [monthKey, setMonthKey] = useState(currentMonthKey());
-  const [drafts, setDrafts] = useState<DraftKayit[]>([emptyDraft()]);
+  const [drafts, setDrafts] = useState<DraftSlot[]>(() => Array.from({ length: DRAFT_COUNT }, newSlot));
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const thisMonth = currentMonthKey();
 
   const stats = useMemo(() => {
     let kasadakiNakit = 0;
-    let kartBuAy = 0;
+    let bankaBuAy = 0;
     let toplamAlacak = 0;
     let toplamBorc = 0;
 
-    for (const k of kayitlar) {
-      const sign = k.yon === "gelen" ? 1 : -1;
-      if (k.odemeSekli === "nakit") kasadakiNakit += sign * k.alinanTutar;
-      if (k.odemeSekli === "kart" && k.yon === "gelen" && k.ay === thisMonth) {
-        kartBuAy += k.alinanTutar;
-      }
-      if (k.durum === "aktif") {
-        const kalan = k.toplamTutar - k.alinanTutar;
-        if (kalan > 0) {
-          if (k.yon === "gelen") toplamAlacak += kalan;
-          else toplamBorc += kalan;
-        }
-      }
+    // Cash balance counts only nakit; kart and havale are on the bank side.
+    for (const h of tumHareketler(kayitlar)) {
+      if (h.odemeSekli === "nakit") kasadakiNakit += signed(h);
+      else if (h.yon === "gelen" && monthKeyOf(h.tarih) === thisMonth) bankaBuAy += h.tutar;
     }
-    return { kasadakiNakit, kartBuAy, toplamAlacak, toplamBorc };
+    for (const k of kayitlar) {
+      if (k.durum !== "aktif") continue;
+      const kalan = k.toplamTutar - k.alinanTutar;
+      if (kalan <= 0) continue;
+      if (k.yon === "gelen") toplamAlacak += kalan;
+      else toplamBorc += kalan;
+    }
+    return { kasadakiNakit, bankaBuAy, toplamAlacak, toplamBorc };
   }, [kayitlar, thisMonth]);
 
+  // Oldest first, so new rows land right above the empty entry rows.
   const monthKayitlar = useMemo(
-    () => kayitlar.filter((k) => k.ay === monthKey).sort((a, b) => (a.tarih < b.tarih ? 1 : -1)),
+    () =>
+      kayitlar
+        .filter((k) => k.ay === monthKey)
+        .sort((a, b) => (a.tarih === b.tarih ? a.createdAt - b.createdAt : a.tarih < b.tarih ? -1 : 1)),
     [kayitlar, monthKey]
   );
 
@@ -76,36 +98,35 @@ export default function KasaPage() {
     [kayitlar]
   );
 
-  async function saveDraft(index: number) {
-    const d = drafts[index];
-    if (!d.firma.trim()) return;
-    const toplam = Number(d.toplamTutar) || 0;
-    const alinan = Number(d.alinanTutar) || 0;
-    await addKasaKaydi({
-      tarih: d.tarih,
-      firma: d.firma.trim(),
-      aciklama: d.aciklama.trim(),
-      toplamTutar: toplam,
-      alinanTutar: alinan,
-      odemeSekli: d.odemeSekli,
-      yon: d.yon,
-    });
-    setDrafts((prev) => {
-      const next = [...prev];
-      next[index] = emptyDraft();
-      return next;
-    });
+  async function saveDraft(key: number) {
+    const slot = drafts.find((s) => s.key === key);
+    if (!slot || !slot.value.firma.trim()) return;
+    const d = slot.value;
+
+    // Saved row leaves the draft area and a fresh empty row is appended, keeping DRAFT_COUNT.
+    setDrafts((prev) => [...prev.filter((s) => s.key !== key), newSlot()]);
+    focusFirstEmptyDraft();
+
+    try {
+      await addKasaKaydi({
+        tarih: d.tarih,
+        firma: d.firma.trim(),
+        aciklama: d.aciklama.trim(),
+        toplamTutar: Number(d.toplamTutar) || 0,
+        alinanTutar: Number(d.alinanTutar) || 0,
+        odemeSekli: d.odemeSekli,
+        bankaHesapId: d.bankaHesapId,
+        yon: d.yon,
+      });
+    } catch (err) {
+      console.error(err);
+      setDrafts((prev) => [slot, ...prev.slice(0, DRAFT_COUNT - 1)]);
+      alert("Kayıt kaydedilemedi, lütfen tekrar deneyin.");
+    }
   }
 
-  function updateDraft(index: number, patch: Partial<DraftKayit>) {
-    setDrafts((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], ...patch };
-      if (index === next.length - 1 && next[index].firma.trim()) {
-        next.push(emptyDraft());
-      }
-      return next;
-    });
+  function updateDraft(key: number, patch: Partial<DraftKayit>) {
+    setDrafts((prev) => prev.map((s) => (s.key === key ? { ...s, value: { ...s.value, ...patch } } : s)));
   }
 
   async function saveExisting(k: KasaKaydi, patch: Partial<KasaKaydi>) {
@@ -118,62 +139,28 @@ export default function KasaPage() {
     <div className="page-enter flex flex-col gap-8">
       <PageHeader
         title="Kasa"
-        description="Yeni işlemleri Excel'de yazar gibi girin — kaydedilen satırlar Arşiv'de ay ay listelenir."
+        description="İşlemleri Excel'de yazar gibi girin. Tab ile hücreler arasında gezin, Enter ile kaydedin."
         showGreeting
       />
 
-      <div className="flex flex-wrap gap-4">
-        <StatCard
-          title="Kasa Bakiyesi"
-          value={formatTL(stats.kasadakiNakit)}
-          subtitle="Elde bulunan nakit para"
-          tone="green"
-          icon={Wallet}
-        />
-        <StatCard
-          title="Bu Ay Banka Tahsilatı"
-          value={formatTL(stats.kartBuAy)}
-          subtitle="Kart ve havale ile gelen, her ay sıfırlanır"
-          tone="blue"
-          icon={CreditCard}
-        />
-        <StatCard
-          title="Tahsil Edilecek"
-          value={formatTL(stats.toplamAlacak)}
-          subtitle="Müşterilerden alınacak toplam"
-          tone="orange"
-          icon={ArrowDownToLine}
-        />
-        <StatCard
-          title="Ödenecek Borç"
-          value={formatTL(stats.toplamBorc)}
-          subtitle="Tedarikçilere ödenecek toplam"
-          tone="red"
-          icon={ArrowUpFromLine}
-        />
-      </div>
-
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
           <MonthNav monthKey={monthKey} onChange={setMonthKey} />
           {loading && <span className="text-xs text-[var(--muted)]">yükleniyor…</span>}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm table-zebra">
+          <table className="w-full text-sm data-table">
             <thead>
-              <tr className="text-left text-[var(--foreground)] text-xs uppercase tracking-wide bg-gray-50 border-b border-[var(--border)]">
-                <th className="px-4 py-3 font-bold w-[120px]">Tarih</th>
-                <th className="px-4 py-3 font-bold">Firma / Açıklama</th>
-                <th className="px-4 py-3 font-bold w-[130px]">Toplam Tutar</th>
-                <th className="px-4 py-3 font-bold w-[110px]">Ödeme Şekli</th>
-                <th className="px-4 py-3 font-bold w-[110px]">İşlem</th>
-                <th className="px-4 py-3 font-bold w-[150px]">
+              <tr>
+                <th className="w-[140px]">Tarih</th>
+                <th>Firma / Açıklama</th>
+                <th className="w-[130px] text-right">Toplam Tutar</th>
+                <th className="w-[260px]">Ödeme Şekli</th>
+                <th className="w-[100px]">İşlem</th>
+                <th className="w-[130px] text-right" title="Kalan tutar otomatik olarak Alacaklar/Borçlar'a düşer">
                   Peşin Ödenen
-                  <div className="text-[10px] normal-case font-normal text-[var(--muted)] mt-0.5 leading-tight">
-                    Kalan otomatik Alacak/Borç&apos;a düşer
-                  </div>
                 </th>
-                <th className="px-4 py-3 font-bold w-[80px]"></th>
+                <th className="w-[84px]"></th>
               </tr>
             </thead>
             <tbody>
@@ -181,22 +168,27 @@ export default function KasaPage() {
                 <KayitRow
                   key={k.id}
                   value={k}
+                  hesaplar={hesaplar}
                   saving={savingId === k.id}
                   onSave={(patch) => saveExisting(k, patch)}
                   onDelete={() => deleteKasaKaydi(k.id)}
                 />
               ))}
-              {drafts.map((d, i) => (
+              {drafts.map((s) => (
                 <KayitRow
-                  key={`draft-${i}`}
-                  value={d}
+                  key={`draft-${s.key}`}
+                  value={s.value}
+                  hesaplar={hesaplar}
                   isDraft
-                  onSave={() => saveDraft(i)}
-                  onDraftChange={(patch) => updateDraft(i, patch)}
+                  onSave={() => saveDraft(s.key)}
+                  onDraftChange={(patch) => updateDraft(s.key, patch)}
                 />
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="px-5 py-2.5 border-t border-[var(--border)] text-[11px] text-[var(--muted-soft)]">
+          Peşin ödenmeyen kısım otomatik olarak Alacaklar / Borçlar&apos;a düşer.
         </div>
       </div>
 
@@ -204,6 +196,35 @@ export default function KasaPage() {
         <PreviewList title="Alacaklar" href="/alacaklar" items={alacaklar} tone="orange" />
         <PreviewList title="Borçlar" href="/verecekler" items={borclar} tone="red" />
       </div>
+
+      <StatStrip
+        items={[
+          {
+            title: "Kasa Bakiyesi",
+            value: formatTL(stats.kasadakiNakit),
+            hint: "Elde bulunan nakit para (kart ve havale hariç)",
+            tone: "green",
+          },
+          {
+            title: "Bu Ay Banka Tahsilatı",
+            value: formatTL(stats.bankaBuAy),
+            hint: "Bu ay kredi kartı ve havale ile gelen",
+            tone: "blue",
+          },
+          {
+            title: "Tahsil Edilecek",
+            value: formatTL(stats.toplamAlacak),
+            hint: "Müşterilerden alınacak toplam",
+            tone: "orange",
+          },
+          {
+            title: "Ödenecek Borç",
+            value: formatTL(stats.toplamBorc),
+            hint: "Tedarikçilere ödenecek toplam",
+            tone: "red",
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -221,24 +242,24 @@ function PreviewList({
 }) {
   return (
     <div className="card p-5">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-bold">{title}</h2>
-        <Link href={href} className="text-sm text-[var(--brand)] font-medium hover:underline">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <Link href={href} className="text-xs text-[var(--muted)] font-medium hover:text-[var(--foreground)]">
           Tümünü gör →
         </Link>
       </div>
       {items.length === 0 ? (
-        <p className="text-sm text-[var(--muted)]">Şu an bekleyen kayıt yok.</p>
+        <p className="text-sm text-[var(--muted)] py-2">Şu an bekleyen kayıt yok.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-[var(--border)]">
           {items.map((k) => (
-            <li key={k.id} className="py-2.5 flex items-center justify-between text-sm">
-              <div>
-                <div className="font-medium">{k.firma}</div>
-                <div className="text-xs text-[var(--muted)]">{k.aciklama || "—"}</div>
+            <li key={k.id} className="py-2.5 flex items-center justify-between gap-4 text-sm">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{k.firma}</div>
+                <div className="text-xs text-[var(--muted)] truncate">{k.aciklama || "—"}</div>
               </div>
               <div
-                className={`font-bold ${tone === "orange" ? "text-[var(--accent-orange)]" : "text-[var(--brand)]"}`}
+                className={`num font-medium ${tone === "orange" ? "text-[var(--accent-orange)]" : "text-[var(--brand)]"}`}
               >
                 {formatTL(k.toplamTutar - k.alinanTutar)}
               </div>

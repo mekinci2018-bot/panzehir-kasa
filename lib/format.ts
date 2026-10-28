@@ -1,3 +1,11 @@
+import type { OdemeSekli } from "./types";
+
+export const ODEME_SEKLI_LABEL: Record<OdemeSekli, string> = {
+  nakit: "Nakit",
+  kart: "Kredi Kartı",
+  havale: "Banka Havalesi",
+};
+
 export function formatTL(amount: number): string {
   return (
     "₺" +
@@ -60,6 +68,16 @@ export function longDateTR(): string {
     year: "numeric",
     weekday: "long",
   });
+}
+
+export type VadeDurumu = "gecti" | "yaklasiyor" | "normal";
+
+// Overdue once the due date has passed; "yaklasiyor" when due today or within 7 days.
+export function vadeDurumu(vadeTarihi: string): VadeDurumu {
+  const gecen = daysSince(vadeTarihi);
+  if (gecen > 0) return "gecti";
+  if (gecen >= -7) return "yaklasiyor";
+  return "normal";
 }
 
 export function daysSince(iso: string): number {

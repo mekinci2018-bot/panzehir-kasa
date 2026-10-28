@@ -11,9 +11,10 @@ export default function AlacaklarPage() {
       subtitle="Müşterilerden tahsil edilmeyi bekleyen tutarlar."
       amountLabel="Alacak Tutarı"
       actionLabel="Ödeme Al"
+      newLabel="Yeni Alacak"
       icon={ArrowDownToLine}
       emptyTitle="Henüz alacak yok"
-      emptyDescription="Kasa'da 'Giriş' işlemi girip tamamını peşin almadığında kalan tutar burada listelenir."
+      emptyDescription="'Yeni Alacak' ile ekleyebilir ya da Kasa'da peşin alınmayan bir 'Giriş' girebilirsin."
     />
   );
 }

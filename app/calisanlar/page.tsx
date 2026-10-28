@@ -73,13 +73,13 @@ export default function CalisanlarPage() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm table-zebra">
+            <table className="w-full text-sm data-table">
               <thead>
-                <tr className="text-left text-[var(--foreground)] text-xs uppercase tracking-wide bg-gray-50 border-b border-[var(--border)]">
+                <tr>
                   {FIELDS.map((f) => (
-                    <th key={f.key} className="px-4 py-3 font-bold">{f.label}</th>
+                    <th key={f.key} >{f.label}</th>
                   ))}
-                  <th className="px-4 py-3 font-bold w-[100px]"></th>
+                  <th className="w-[100px]"></th>
                 </tr>
               </thead>
               <tbody>
@@ -140,7 +140,7 @@ function EditRow({
   onCancel: () => void;
 }) {
   return (
-    <tr className="border-t border-[var(--border)] bg-gray-50/60">
+    <tr className="border-t border-[var(--border)] bg-[var(--surface-hover)]">
       {FIELDS.map((f) => (
         <td key={f.key} className="px-4 py-2">
           <input

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Archive, ChevronRight } from "lucide-react";
 import { useKasaKayitlari } from "@/lib/hooks";
-import { formatDate, formatTL, monthLabel } from "@/lib/format";
+import { ODEME_SEKLI_LABEL, formatDate, formatTL, monthLabel } from "@/lib/format";
 import type { KasaKaydi } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
@@ -34,7 +34,7 @@ export default function ArsivPage() {
       />
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-bold text-lg">Tüm Kasa Kayıtları (geçmiş)</h2>
+        <h2 className="font-semibold text-[15px]">Tüm Kasa Kayıtları (geçmiş)</h2>
         {!loading && tumKayitlar.length === 0 && (
           <div className="card">
             <EmptyState
@@ -50,7 +50,7 @@ export default function ArsivPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-bold text-lg">Tahsil Edilen / Ödenen / Arşivlenenler</h2>
+        <h2 className="font-semibold text-[15px]">Tahsil Edilen / Ödenen / Arşivlenenler</h2>
         {!loading && kapanmislar.length === 0 && (
           <div className="card">
             <EmptyState
@@ -74,7 +74,7 @@ function MonthAccordion({ ay, items }: { ay: string; items: KasaKaydi[] }) {
   return (
     <div className="card overflow-hidden">
       <button
-        className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50/70 hover:bg-gray-100 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[var(--surface-hover)] transition-colors"
         onClick={() => setOpen((v) => !v)}
       >
         <span className="flex items-center gap-2 font-semibold">
@@ -85,37 +85,37 @@ function MonthAccordion({ ay, items }: { ay: string; items: KasaKaydi[] }) {
       </button>
       {open && (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm table-zebra">
+          <table className="w-full text-sm data-table border-t border-[var(--border)]">
             <thead>
-              <tr className="text-left text-[var(--muted)] text-xs uppercase tracking-wide bg-gray-50 border-y border-[var(--border)]">
-                <th className="px-5 py-2 font-semibold">Tarih</th>
-                <th className="px-5 py-2 font-semibold">Firma / Açıklama</th>
-                <th className="px-5 py-2 font-semibold">İşlem</th>
-                <th className="px-5 py-2 font-semibold">Ödeme</th>
-                <th className="px-5 py-2 font-semibold">Toplam</th>
-                <th className="px-5 py-2 font-semibold">Peşin</th>
-                <th className="px-5 py-2 font-semibold">Durum</th>
+              <tr>
+                <th>Tarih</th>
+                <th>Firma / Açıklama</th>
+                <th>İşlem</th>
+                <th>Ödeme</th>
+                <th className="text-right">Toplam</th>
+                <th className="text-right">Alınan / Ödenen</th>
+                <th>Durum</th>
               </tr>
             </thead>
             <tbody>
               {items
                 .sort((a, b) => (a.tarih < b.tarih ? 1 : -1))
                 .map((k) => (
-                  <tr key={k.id} className="border-t border-[var(--border)]">
-                    <td className="px-5 py-2">{formatDate(k.tarih)}</td>
-                    <td className="px-5 py-2">
+                  <tr key={k.id}>
+                    <td className="tabular">{formatDate(k.tarih)}</td>
+                    <td>
                       <div className="font-medium">{k.firma}</div>
                       <div className="text-xs text-[var(--muted)]">{k.aciklama}</div>
                     </td>
-                    <td className="px-5 py-2">
+                    <td>
                       <span className={`badge ${k.yon === "gelen" ? "badge-giris" : "badge-cikis"}`}>
                         {k.yon === "gelen" ? "Giriş" : "Çıkış"}
                       </span>
                     </td>
-                    <td className="px-5 py-2 capitalize">{k.odemeSekli}</td>
-                    <td className="px-5 py-2">{formatTL(k.toplamTutar)}</td>
-                    <td className="px-5 py-2">{formatTL(k.alinanTutar)}</td>
-                    <td className="px-5 py-2">
+                    <td>{ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli}</td>
+                    <td className="num">{formatTL(k.toplamTutar)}</td>
+                    <td className="num">{formatTL(k.alinanTutar)}</td>
+                    <td>
                       <DurumBadge durum={k.durum} />
                     </td>
                   </tr>
