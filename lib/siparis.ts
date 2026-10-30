@@ -60,45 +60,59 @@ export function tahsilatUyari(s: Siparis, h: SiparisHesap): TahsilatUyari {
 
 export type SiparisSekmesi =
   | "tumu"
+  | "bekliyor"
   | "uretimde"
   | "bitti"
   | "teslim"
   | "teslimOdenmedi"
   | "odemeBekleyen"
+  | "odenmedi"
+  | "kismi"
   | "odendi"
   | "faturasiz";
 
 export const SEKME_LABEL: Record<SiparisSekmesi, string> = {
   tumu: "Tümü",
+  bekliyor: "Bekliyor",
   uretimde: "Üretimde",
   bitti: "Bitti",
   teslim: "Teslim Edildi",
   teslimOdenmedi: "Teslim Edildi · Parası Alınmadı",
   odemeBekleyen: "Ödeme Bekleyen",
+  odenmedi: "Ödenmedi",
+  kismi: "Kısmi",
   odendi: "Ödendi",
   faturasiz: "Faturası Kesilmeyen",
 };
 
-// "Üretimde" also holds orders still waiting to start, so nothing unfinished drops out of view.
+// Each tab shows exactly its own state; "Ödeme Bekleyen" is Ödenmedi + Kısmi. Orders whose remainder
+// was written off (Kapatıldı) are in none of the payment tabs.
 export function sekmedeMi(sekme: SiparisSekmesi, s: Siparis, h: SiparisHesap): boolean {
+  const odeme = odemeDurumu(s, h);
   switch (sekme) {
     case "tumu":
       return true;
+    case "bekliyor":
     case "uretimde":
-      return s.uretim === "uretimde" || s.uretim === "bekliyor";
     case "bitti":
-      return s.uretim === "bitti";
     case "teslim":
-      return s.uretim === "teslim";
+      return s.uretim === sekme;
     case "teslimOdenmedi":
       return s.uretim === "teslim" && h.kalan > 0;
     case "odemeBekleyen":
-      return h.kalan > 0;
+      return odeme === "odenmedi" || odeme === "kismi";
+    case "odenmedi":
+    case "kismi":
     case "odendi":
-      return odemeDurumu(s, h) === "odendi";
+      return odeme === sekme;
     case "faturasiz":
       return !s.fatura;
   }
+}
+
+// An order from an earlier month stays in view until it is both fully paid and delivered.
+export function devrederMi(s: Siparis, h: SiparisHesap): boolean {
+  return h.kalan > 0 || s.uretim !== "teslim";
 }
 
 // Kasa row summary counts for a company.

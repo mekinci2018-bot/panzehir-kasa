@@ -16,10 +16,12 @@ import {
   Trash2,
   Building2,
   ClipboardList,
+  Settings,
 } from "lucide-react";
 import { logout } from "@/lib/firebase";
 import Logo from "./Logo";
 import InstallButton from "./InstallButton";
+import YedekDurumSatiri from "./YedekDurumSatiri";
 
 const NAV = [
   { href: "/kasa", label: "Kasa", icon: Wallet },
@@ -31,11 +33,12 @@ const NAV = [
   { href: "/banka-bilgileri", label: "Banka Hesapları", icon: Landmark },
   { href: "/calisanlar", label: "Personel", icon: Users },
   { href: "/cop-kutusu", label: "Çöp Kutusu", icon: Trash2 },
+  { href: "/ayarlar", label: "Ayarlar", icon: Settings },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigate?: () => void }) {
   return (
-    <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
+    <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 flex flex-col gap-0.5">
       {NAV.map((item) => {
         const active = pathname === item.href || pathname?.startsWith(item.href + "/");
         const Icon = item.icon;
@@ -106,6 +109,7 @@ export default function Sidebar() {
             </div>
             <div className="h-px bg-white/[0.06] mx-4" />
             <NavLinks pathname={pathname} onNavigate={() => setOpen(false)} />
+            <YedekDurumSatiri onNavigate={() => setOpen(false)} />
             <InstallButton />
             <LockButton />
           </aside>
@@ -120,6 +124,7 @@ export default function Sidebar() {
           </div>
         </div>
         <NavLinks pathname={pathname} />
+        <YedekDurumSatiri />
         <InstallButton />
         <LockButton />
       </aside>

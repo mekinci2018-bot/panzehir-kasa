@@ -8,12 +8,15 @@ import PageHeader from "@/components/PageHeader";
 import KayitDetayModal from "@/components/KayitDetayModal";
 import { hesapEtiketi } from "@/components/OdemeSekliSelect";
 import FirmaLink from "@/components/FirmaLink";
+import MonthNav from "@/components/MonthNav";
+import AyKasaOzeti from "@/components/AyKasaOzeti";
+import { aylikKasa } from "@/lib/donem";
 import { kartOnerileri, useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaSiparisOzetleri, siparisHesap, siparisOdemeleri } from "@/lib/siparis";
 import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
 import { tumHareketler, signed } from "@/lib/hareketler";
-import { ODEME_SEKLI_LABEL, bakiyeEtiketi, formatTL, isoDayOf, todayISO } from "@/lib/format";
+import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatTL, isoDayOf, todayISO } from "@/lib/format";
 import type { BankaHesabi, KasaKaydi } from "@/lib/types";
 import KayitRow, { type DraftKayit } from "./KayitRow";
 
@@ -60,12 +63,14 @@ export default function KasaPage() {
   const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit } | null>(null);
   const geriAlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detayId, setDetayId] = useState<string | null>(null);
+  const [ozetAyi, setOzetAyi] = useState(currentMonthKey);
 
   useEffect(() => () => {
     if (geriAlTimer.current) clearTimeout(geriAlTimer.current);
   }, []);
 
   const oneriler = useMemo(() => kartOnerileri(kayitlar), [kayitlar]);
+  const ayDonemi = useMemo(() => aylikKasa(kayitlar, ozetAyi), [kayitlar, ozetAyi]);
   const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
   const ozetler = useMemo(() => cariOzetleri(kayitlar, "firmaId", siparisler, odemeler), [kayitlar, siparisler, odemeler]);
   const siparisOzetleri = useMemo(() => firmaSiparisOzetleri(siparisler, odemeler), [siparisler, odemeler]);
@@ -251,6 +256,16 @@ export default function KasaPage() {
       </div>
 
       <BugunGirilenler items={bugunGirilenler} loading={loading} hesaplar={hesaplar} onSelect={setDetayId} />
+
+      <div className="card overflow-hidden">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Aylık kasa özeti</h2>
+          <MonthNav monthKey={ozetAyi} onChange={setOzetAyi} />
+        </div>
+        <div className="py-2">
+          <AyKasaOzeti ay={ozetAyi} donem={ayDonemi} />
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <PreviewList title="Alacaklar" href="/alacaklar" items={alacaklar} tone="orange" />

@@ -208,6 +208,15 @@ body {
     background: #fcfcfd;
   }
 
+  /* Group headers inside a table: "Önceki aylardan devreden", the month name. */
+  .data-table tbody tr.grup-satir td {
+    padding: 0;
+    background: #f8f8fa;
+  }
+  .data-table tbody tr.grup-satir:hover {
+    background: transparent;
+  }
+
   /* Inputs */
   .input-sm {
     background: transparent;

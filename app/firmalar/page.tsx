@@ -18,6 +18,7 @@ import { formatDate, formatTL } from "@/lib/format";
 import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 import BakiyeHucre from "@/components/BakiyeHucre";
 
 const SEKMELER: { tur: FirmaTuru; label: string }[] = [
@@ -167,7 +168,9 @@ export default function FirmalarPage() {
           )}
         </div>
 
-        {!loading && sayilar[sekme] === 0 ? (
+        {loading && firmalar.length === 0 ? (
+          <YukleniyorSatiri />
+        ) : sayilar[sekme] === 0 ? (
           <EmptyState
             icon={Building2}
             title={gider ? "Henüz gider kalemi yok" : `Henüz ${FIRMA_TURU_LABEL[sekme].toLocaleLowerCase("tr-TR")} yok`}

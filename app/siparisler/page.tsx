@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ClipboardList, MoreHorizontal, Plus, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronRight, ClipboardList, MoreHorizontal, Plus, Search, X } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import EmptyState from "@/components/EmptyState";
+import MonthNav from "@/components/MonthNav";
+import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 import FirmaLink from "@/components/FirmaLink";
 import FirmaSecici from "@/components/FirmaSecici";
 import GorselHucre from "@/components/GorselHucre";
@@ -16,6 +17,7 @@ import { gorselHazirla } from "@/lib/gorsel";
 import { firmaAnahtari, firmaTuru } from "@/lib/firma";
 import {
   SEKME_LABEL,
+  devrederMi,
   odemeDurumu,
   sekmedeMi,
   siparisHesap,
@@ -24,11 +26,13 @@ import {
   type SiparisHesap,
   type SiparisSekmesi,
 } from "@/lib/siparis";
-import { formatDate, formatTL, todayISO } from "@/lib/format";
+import { currentMonthKey, formatDate, formatTL, monthLabel, todayISO } from "@/lib/format";
+import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
 import type { BankaHesabi, Firma, GorselAlani, Siparis } from "@/lib/types";
 
-const DRAFT_COUNT = 3;
+const SAYFA = 100; // rows rendered at a time; "Daha fazla göster" adds the next batch
 const SEKME_ANAHTARI = "siparisler.sekme";
+const DEVREDEN_ANAHTARI = "siparisler.devredenAcik";
 const SEKMELER = Object.keys(SEKME_LABEL) as SiparisSekmesi[];
 
 interface Taslak {
@@ -59,9 +63,6 @@ const bosTaslak = (): Taslak => ({
   bitenGorselleri: [],
 });
 
-let taslakSeq = 0;
-const yeniSlot = () => ({ key: ++taslakSeq, value: bosTaslak() });
-
 function sekmeOku(): SiparisSekmesi {
   try {
     const s = localStorage.getItem(SEKME_ANAHTARI) as SiparisSekmesi | null;
@@ -70,56 +71,112 @@ function sekmeOku(): SiparisSekmesi {
   return "tumu";
 }
 
+function devredenAcikOku(): boolean {
+  try {
+    return localStorage.getItem(DEVREDEN_ANAHTARI) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+type Hesapli = { s: Siparis; h: SiparisHesap };
+
+// Typing "N" opens a new order, unless the user is typing somewhere or a window is open.
+function yazmaAlanindaMi(el: EventTarget | null): boolean {
+  const t = el as HTMLElement | null;
+  return !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+}
+
 export default function SiparislerPage() {
   const { siparisler, loading } = useSiparisler();
   const { kayitlar } = useKasaKayitlari();
   const { firmalar } = useFirmalar();
   const { hesaplar } = useBankaHesaplari();
+  const [ay, setAy] = useState(currentMonthKey);
   const [sekme, setSekmeState] = useState<SiparisSekmesi>("tumu");
+  const [devredenAcik, setDevredenAcikState] = useState(true);
   const [arama, setArama] = useState("");
-  const [taslaklar, setTaslaklar] = useState(() => Array.from({ length: DRAFT_COUNT }, yeniSlot));
+  const [limit, setLimit] = useState(SAYFA);
+  const [yeni, setYeni] = useState<Taslak | null>(null);
   const [detayId, setDetayId] = useState<string | null>(null);
   const [odemeId, setOdemeId] = useState<string | null>(null);
   const [mobilYeni, setMobilYeni] = useState(false);
   const [bildirim, setBildirim] = useState<string | null>(null);
   const bildirimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // The chosen tab is remembered on this device (read after mount: localStorage is browser-only).
+  // The chosen tab and the carried-over section's open state are remembered on this device.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage
     setSekmeState(sekmeOku());
+    setDevredenAcikState(devredenAcikOku());
   }, []);
 
   function setSekme(s: SiparisSekmesi) {
     setSekmeState(s);
+    setLimit(SAYFA);
     try {
       localStorage.setItem(SEKME_ANAHTARI, s);
     } catch {}
   }
+
+  function devredenToggle() {
+    const v = !devredenAcik;
+    setDevredenAcikState(v);
+    try {
+      localStorage.setItem(DEVREDEN_ANAHTARI, v ? "1" : "0");
+    } catch {}
+  }
+
+  const pencereAcik = !!(yeni || detayId || odemeId || mobilYeni);
+
+  const yeniAc = useCallback(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      setMobilYeni(true);
+      return;
+    }
+    setYeni((v) => v ?? bosTaslak());
+    requestAnimationFrame(() => document.querySelector<HTMLInputElement>('tr[data-taslak] input[data-field="firma"]')?.focus());
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "n" || e.ctrlKey || e.metaKey || e.altKey || yazmaAlanindaMi(e.target) || pencereAcik) return;
+      e.preventDefault();
+      yeniAc();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pencereAcik, yeniAc]);
 
   const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
   const oneriler = useMemo(() => kartOnerileri(kayitlar), [kayitlar]);
   // Orders are for customers and suppliers, never expense items.
   const musteriler = useMemo(() => firmalar.filter((f) => firmaTuru(f) !== "gider"), [firmalar]);
 
-  const hesapli = useMemo(
-    () => siparisler.map((s) => ({ s, h: siparisHesap(s, odemeler) })),
-    [siparisler, odemeler]
-  );
+  const hesapli = useMemo<Hesapli[]>(() => siparisler.map((s) => ({ s, h: siparisHesap(s, odemeler) })), [siparisler, odemeler]);
 
-  const aranan = useMemo(() => {
-    const k = firmaAnahtari(arama);
-    if (!k) return hesapli;
-    return hesapli.filter(({ s }) => firmaAnahtari(`${s.firmaAdi} ${s.urun} ${s.aciklama}`).includes(k));
-  }, [hesapli, arama]);
+  // The selected month, plus earlier orders not yet both paid and delivered. A search looks in every month.
+  const aramaAnahtari = firmaAnahtari(arama);
+  const { ayin, devreden } = useMemo(() => {
+    if (aramaAnahtari) {
+      return {
+        ayin: hesapli.filter(({ s }) => firmaAnahtari(`${s.firmaAdi} ${s.urun} ${s.aciklama}`).includes(aramaAnahtari)),
+        devreden: [] as Hesapli[],
+      };
+    }
+    return {
+      ayin: hesapli.filter(({ s }) => aydaMi(s.tarih, ay)),
+      devreden: hesapli.filter(({ s, h }) => aydanOnceMi(s.tarih, ay) && devrederMi(s, h)),
+    };
+  }, [hesapli, ay, aramaAnahtari]);
+
+  const kapsam = useMemo(() => [...devreden, ...ayin], [devreden, ayin]);
 
   const sayilar = useMemo(() => {
     const m = {} as Record<SiparisSekmesi, number>;
-    for (const t of SEKMELER) m[t] = aranan.filter(({ s, h }) => sekmedeMi(t, s, h)).length;
+    for (const t of SEKMELER) m[t] = kapsam.filter(({ s, h }) => sekmedeMi(t, s, h)).length;
     return m;
-  }, [aranan]);
-
-  const gorunen = useMemo(() => aranan.filter(({ s, h }) => sekmedeMi(sekme, s, h)), [aranan, sekme]);
+  }, [kapsam]);
 
   const ozet = useMemo(() => {
     let uretimde = 0;
@@ -127,9 +184,9 @@ export default function SiparislerPage() {
     let teslimOdenmedi = 0;
     let teslimOdenmediTutar = 0;
     let alacak = 0;
-    for (const { s, h } of hesapli) {
+    for (const { s, h } of kapsam) {
       if (sekmedeMi("uretimde", s, h)) uretimde++;
-      if (s.uretim === "bitti") bitti++;
+      if (sekmedeMi("bitti", s, h)) bitti++;
       if (sekmedeMi("teslimOdenmedi", s, h)) {
         teslimOdenmedi++;
         teslimOdenmediTutar += h.kalan;
@@ -137,7 +194,22 @@ export default function SiparislerPage() {
       alacak += h.kalan;
     }
     return { uretimde, bitti, teslimOdenmedi, teslimOdenmediTutar, alacak };
-  }, [hesapli]);
+  }, [kapsam]);
+
+  const sekmedeki = (list: Hesapli[]) => list.filter(({ s, h }) => sekmedeMi(sekme, s, h));
+  const devredenSekmede = sekmedeki(devreden);
+  const devredenKalan = devredenSekmede.reduce((t, { h }) => t + h.kalan, 0);
+  const ayinSekmede = sekmedeki(ayin);
+  const gorunen = ayinSekmede.slice(0, limit);
+  const kalanSayi = ayinSekmede.length - gorunen.length;
+  const bos = !loading && devredenSekmede.length === 0 && ayinSekmede.length === 0;
+  const rozet = (s: Siparis) => (aramaAnahtari || !aydaMi(s.tarih, ay) ? kisaAyEtiketi(s.tarih, ay) : undefined);
+
+  const bosMetni = aramaAnahtari
+    ? `“${arama.trim()}” ile eşleşen sipariş yok.`
+    : sekme === "tumu"
+      ? `${monthLabel(ay)} için henüz sipariş yok.`
+      : "Bu sekmede şu an sipariş yok.";
 
   const detay = detayId ? siparisler.find((s) => s.id === detayId) : undefined;
   const odemeSiparis = odemeId ? hesapli.find(({ s }) => s.id === odemeId) : undefined;
@@ -148,15 +220,10 @@ export default function SiparislerPage() {
     bildirimTimer.current = setTimeout(() => setBildirim(null), 3500);
   }
 
-  async function taslakKaydet(key: number) {
-    const slot = taslaklar.find((t) => t.key === key);
-    if (!slot || !slot.value.firmaId) return;
-    const t = slot.value;
-    setTaslaklar((prev) => [...prev.filter((x) => x.key !== key), yeniSlot()]);
-    requestAnimationFrame(() => {
-      const inputs = document.querySelectorAll<HTMLInputElement>('tr[data-taslak] input[data-field="firma"]');
-      ([...inputs].find((i) => !i.value) ?? inputs[0])?.focus();
-    });
+  async function yeniKaydet() {
+    if (!yeni?.firmaId) return;
+    const t = yeni;
+    setYeni(null);
     try {
       const odenen = Number(t.odenen) || 0;
       const ref = await addSiparis(
@@ -176,7 +243,7 @@ export default function SiparislerPage() {
       await gorselleriYukle(ref.id, "biten", t.bitenGorselleri);
     } catch (err) {
       console.error(err);
-      setTaslaklar((prev) => [slot, ...prev.slice(0, DRAFT_COUNT - 1)]);
+      setYeni(t);
       alert("Sipariş kaydedilemedi, lütfen tekrar deneyin.");
     }
   }
@@ -192,20 +259,32 @@ export default function SiparislerPage() {
     }
   }
 
-  function taslakGuncelle(key: number, patch: Partial<Taslak>) {
-    setTaslaklar((prev) => prev.map((t) => (t.key === key ? { ...t, value: { ...t.value, ...patch } } : t)));
-  }
+  const devredenBaslik = (
+    <button className="inline-flex items-center gap-2 text-[13px] font-medium" onClick={devredenToggle}>
+      <ChevronRight className={`w-4 h-4 text-[var(--muted)] transition-transform ${devredenAcik ? "rotate-90" : ""}`} />
+      Önceki aylardan devreden
+      <span className="text-[var(--muted)] font-normal tabular">
+        ({devredenSekmede.length} iş · {formatTL(devredenKalan)} kalan)
+      </span>
+    </button>
+  );
 
   return (
     <div className="page-enter flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <PageHeader
           title="Siparişler"
-          description="Excel'de yazar gibi girin: Tab ile ilerleyin, Enter ile kaydedin. Görsel hücresine tıklayıp Ctrl+V ile yapıştırabilirsiniz."
+          description="Görsel hücresine tıklayıp Ctrl+V ile yapıştırabilirsiniz. Ödenmemiş ya da teslim edilmemiş işler sonraki aylara devreder."
         />
-        <button className="btn-primary inline-flex items-center gap-2 md:hidden" onClick={() => setMobilYeni(true)}>
-          <Plus className="w-4 h-4" /> Yeni Sipariş
-        </button>
+        <div className="flex items-center gap-3">
+          <div className={aramaAnahtari ? "opacity-40" : ""} title={aramaAnahtari ? "Arama tüm aylarda yapılıyor" : undefined}>
+            <MonthNav monthKey={ay} onChange={(m) => { setAy(m); setLimit(SAYFA); }} />
+          </div>
+          <button className="btn-primary inline-flex items-center gap-2" onClick={yeniAc} title="Yeni sipariş (N)">
+            <Plus className="w-4 h-4" /> Yeni Sipariş
+            <kbd className="hidden md:inline text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/15">N</kbd>
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px] text-[var(--muted)]">
@@ -256,7 +335,15 @@ export default function SiparislerPage() {
 
       <div className="relative max-w-md">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-soft)]" />
-        <input className="input-field !pl-9" placeholder="Firma ya da ürün ara" value={arama} onChange={(e) => setArama(e.target.value)} />
+        <input
+          className="input-field !pl-9"
+          placeholder="Firma ya da ürün ara (tüm aylar)"
+          value={arama}
+          onChange={(e) => {
+            setArama(e.target.value);
+            setLimit(SAYFA);
+          }}
+        />
       </div>
 
       {/* Desktop: spreadsheet-style table */}
@@ -282,46 +369,68 @@ export default function SiparislerPage() {
               </tr>
             </thead>
             <tbody>
-              {taslaklar.map((t) => (
+              {yeni && (
                 <TaslakSatir
-                  key={`t-${t.key}`}
-                  value={t.value}
+                  value={yeni}
                   firmalar={musteriler}
                   hesaplar={hesaplar}
                   kartOnerileri={oneriler}
-                  onChange={(p) => taslakGuncelle(t.key, p)}
-                  onSave={() => taslakKaydet(t.key)}
+                  onChange={(p) => setYeni((v) => (v ? { ...v, ...p } : v))}
+                  onSave={yeniKaydet}
+                  onKapat={() => setYeni(null)}
                 />
-              ))}
+              )}
+              {devredenSekmede.length > 0 && (
+                <tr className="grup-satir">
+                  <td colSpan={14}>
+                    <div className="sticky left-0 w-fit px-3 py-2">{devredenBaslik}</div>
+                  </td>
+                </tr>
+              )}
+              {devredenAcik &&
+                devredenSekmede.map(({ s, h }) => (
+                  <SiparisSatir key={s.id} s={s} h={h} ayRozeti={rozet(s)} onDetay={() => setDetayId(s.id)} onOdeme={() => setOdemeId(s.id)} />
+                ))}
+              {devredenSekmede.length > 0 && gorunen.length > 0 && (
+                <tr className="grup-satir">
+                  <td colSpan={14}>
+                    <div className="sticky left-0 w-fit px-3 py-2 text-[13px] font-medium">
+                      {monthLabel(ay)} <span className="text-[var(--muted)] font-normal">({ayinSekmede.length} iş)</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {gorunen.map(({ s, h }) => (
-                <SiparisSatir
-                  key={s.id}
-                  s={s}
-                  h={h}
-                  onDetay={() => setDetayId(s.id)}
-                  onOdeme={() => setOdemeId(s.id)}
-                />
+                <SiparisSatir key={s.id} s={s} h={h} ayRozeti={rozet(s)} onDetay={() => setDetayId(s.id)} onOdeme={() => setOdemeId(s.id)} />
               ))}
             </tbody>
           </table>
         </div>
-        {!loading && gorunen.length === 0 && (
-          <div className="px-5 py-6 text-sm text-center text-[var(--muted)] border-t border-[var(--border)]">
-            {siparisler.length === 0 ? "Henüz sipariş yok. Yukarıdaki satırlardan ilkini girin." : "Bu sekmede sipariş yok."}
-          </div>
-        )}
+        {loading && siparisler.length === 0 && <YukleniyorSatiri />}
+        {bos && <div className="px-5 py-8 text-sm text-center text-[var(--muted)] border-t border-[var(--border)]">{bosMetni}</div>}
+        {kalanSayi > 0 && <DahaFazla kalan={kalanSayi} onClick={() => setLimit((l) => l + SAYFA)} />}
       </div>
 
       {/* Phone: cards */}
       <div className="md:hidden flex flex-col gap-2.5">
-        {!loading && gorunen.length === 0 && (
+        {loading && siparisler.length === 0 && (
           <div className="card">
-            <EmptyState icon={ClipboardList} title="Sipariş yok" description="Bu sekmede gösterilecek sipariş bulunmuyor." />
+            <YukleniyorSatiri />
           </div>
         )}
+        {bos && <div className="card px-5 py-8 text-sm text-center text-[var(--muted)]">{bosMetni}</div>}
+        {devredenSekmede.length > 0 && <div className="px-1">{devredenBaslik}</div>}
+        {devredenAcik &&
+          devredenSekmede.map(({ s, h }) => <SiparisKarti key={s.id} s={s} h={h} ayRozeti={rozet(s)} onClick={() => setDetayId(s.id)} />)}
+        {devredenSekmede.length > 0 && gorunen.length > 0 && <div className="px-1 pt-2 text-[13px] font-medium">{monthLabel(ay)}</div>}
         {gorunen.map(({ s, h }) => (
-          <SiparisKarti key={s.id} s={s} h={h} onClick={() => setDetayId(s.id)} />
+          <SiparisKarti key={s.id} s={s} h={h} ayRozeti={rozet(s)} onClick={() => setDetayId(s.id)} />
         ))}
+        {kalanSayi > 0 && (
+          <div className="card">
+            <DahaFazla kalan={kalanSayi} onClick={() => setLimit((l) => l + SAYFA)} />
+          </div>
+        )}
       </div>
 
       {detay && (
@@ -363,6 +472,17 @@ export default function SiparislerPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function DahaFazla({ kalan, onClick }: { kalan: number; onClick: () => void }) {
+  return (
+    <button
+      className="w-full px-5 py-3 text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)] border-t border-[var(--border)] transition-colors"
+      onClick={onClick}
+    >
+      Daha fazla göster ({kalan} sipariş daha)
+    </button>
   );
 }
 
@@ -439,13 +559,31 @@ function OdemeGunuHucre({ s, h }: { s: Siparis; h: SiparisHesap }) {
   );
 }
 
-function SiparisSatir({ s, h, onDetay, onOdeme }: { s: Siparis; h: SiparisHesap; onDetay: () => void; onOdeme: () => void }) {
+function AyRozeti({ ay }: { ay?: string }) {
+  if (!ay) return null;
+  return <span className="badge bg-[#f1f1f4] text-[var(--muted)] shrink-0">{ay}</span>;
+}
+
+function SiparisSatir({
+  s,
+  h,
+  ayRozeti,
+  onDetay,
+  onOdeme,
+}: {
+  s: Siparis;
+  h: SiparisHesap;
+  ayRozeti?: string;
+  onDetay: () => void;
+  onOdeme: () => void;
+}) {
   const uyari = tahsilatUyari(s, h);
   return (
     <tr className="kasa-row group">
       <td className="sabit-1 align-top">
-        <div className="px-2 py-1.5">
-          <FirmaLink firmaId={s.firmaId} ad={s.firmaAdi} className="font-medium" />
+        <div className="px-2 py-1.5 flex items-center gap-1.5 min-w-0">
+          <FirmaLink firmaId={s.firmaId} ad={s.firmaAdi} className="font-medium truncate" />
+          <AyRozeti ay={ayRozeti} />
         </div>
       </td>
       <td className="sabit-2 align-top">
@@ -515,6 +653,7 @@ function TaslakSatir({
   kartOnerileri,
   onChange,
   onSave,
+  onKapat,
 }: {
   value: Taslak;
   firmalar: Firma[];
@@ -522,6 +661,7 @@ function TaslakSatir({
   kartOnerileri: string[];
   onChange: (p: Partial<Taslak>) => void;
   onSave: () => void;
+  onKapat: () => void;
 }) {
   const tutar = Number(value.tutar) || 0;
   const odenen = Number(value.odenen) || 0;
@@ -529,6 +669,12 @@ function TaslakSatir({
   const onizlemeDurum = tutar - odenen <= 0.005 ? "odendi" : odenen > 0 ? "kismi" : "odenmedi";
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTableRowElement>) {
+    // Escape closes the entry row (the company list handles its own Escape first).
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onKapat();
+      return;
+    }
     if (e.key !== "Enter" || (e.target as HTMLElement).tagName === "BUTTON") return;
     e.preventDefault();
     if (value.firmaId) onSave();
@@ -601,7 +747,7 @@ function TaslakSatir({
         <input className="input-sm" placeholder="Açıklama" value={value.aciklama} onChange={(e) => onChange({ aciklama: e.target.value })} />
       </td>
       <td className="align-top">
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-1">
           <button
             tabIndex={-1}
             className="icon-btn hover:!text-[var(--accent-green)] disabled:opacity-30"
@@ -610,6 +756,9 @@ function TaslakSatir({
             title={value.firmaId ? "Kaydet (Enter)" : "Önce listeden firma seçin"}
           >
             <Check className="w-4 h-4" />
+          </button>
+          <button tabIndex={-1} className="icon-btn" onClick={onKapat} title="Vazgeç (Esc)">
+            <X className="w-4 h-4" />
           </button>
         </div>
       </td>
@@ -635,7 +784,7 @@ function KartOnizleme({ id }: { id?: string }) {
   );
 }
 
-function SiparisKarti({ s, h, onClick }: { s: Siparis; h: SiparisHesap; onClick: () => void }) {
+function SiparisKarti({ s, h, ayRozeti, onClick }: { s: Siparis; h: SiparisHesap; ayRozeti?: string; onClick: () => void }) {
   const uyari = tahsilatUyari(s, h);
   return (
     <div role="button" tabIndex={0} className="card p-3 flex gap-3 active:bg-[var(--surface-hover)]" onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()}>
@@ -643,7 +792,10 @@ function SiparisKarti({ s, h, onClick }: { s: Siparis; h: SiparisHesap; onClick:
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="font-medium truncate">{s.firmaAdi}</div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-medium truncate">{s.firmaAdi}</span>
+              <AyRozeti ay={ayRozeti} />
+            </div>
             <div className="text-xs text-[var(--muted)] truncate">
               {s.urun || "—"} · <span className="tabular">{formatDate(s.tarih)}</span>
             </div>

@@ -92,6 +92,27 @@ export interface Gorsel {
   createdAt: number;
 }
 
+// ---- Backups (written by the server to sistem/yedek, read by the app) ----
+
+export type YedekTuru = "gunluk" | "tam" | "elle" | "elle-tam" | "geri-yukleme-oncesi";
+
+export interface YedekSonucu {
+  zaman: number;
+  tur: YedekTuru;
+  basarili: boolean;
+  dosyalar?: string[]; // Drive file names (a large full backup may be split into parts)
+  boyut?: number; // bytes uploaded
+  hata?: string;
+}
+
+export interface YedekDurumu {
+  son?: YedekSonucu; // the latest backup of any kind
+  sonOtomatik?: YedekSonucu; // the latest nightly run, successful or not
+  sonBasariliOtomatik?: number; // when the latest nightly run succeeded
+  sonTam?: YedekSonucu; // the latest full backup (with images)
+  sonGeriYukleme?: { zaman: number; dosya: string; basarili: boolean; hata?: string };
+}
+
 export type FirmaTuru = "musteri" | "tedarikci" | "gider";
 
 export interface Firma {

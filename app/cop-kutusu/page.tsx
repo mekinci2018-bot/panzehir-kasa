@@ -7,6 +7,7 @@ import { kayitGeriYukle, siparisGeriYukle } from "@/lib/db";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 
 const SAKLAMA_GUN = 30;
 const GUN_MS = 24 * 60 * 60 * 1000;
@@ -78,7 +79,9 @@ export default function CopKutusuPage() {
       />
 
       <div className="card overflow-hidden">
-        {!loading && items.length === 0 ? (
+        {loading && items.length === 0 ? (
+          <YukleniyorSatiri />
+        ) : items.length === 0 ? (
           <EmptyState icon={Trash2} title="Çöp kutusu boş" description="Bir kaydı ya da siparişi detay penceresinden sildiğinde burada görünür." />
         ) : (
           <div className="table-scroll">

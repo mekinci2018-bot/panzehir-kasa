@@ -9,6 +9,7 @@ import { addCalisan, deleteCalisan, updateCalisan } from "@/lib/db";
 import type { Calisan } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 
 const empty = {
   adSoyad: "",
@@ -38,6 +39,7 @@ export default function CalisanlarPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [adding, setAdding] = useState(false);
+  const [silinecek, setSilinecek] = useState<string | null>(null);
 
   function startEdit(c: Calisan) {
     setEditingId(c.id);
@@ -70,7 +72,9 @@ export default function CalisanlarPage() {
       <PageHeader title="Personel" description="Çalışanların hızlı iletişim ve acil durum bilgileri." />
 
       <div className="card overflow-hidden">
-        {!loading && calisanlar.length === 0 && !adding ? (
+        {loading && calisanlar.length === 0 ? (
+          <YukleniyorSatiri />
+        ) : calisanlar.length === 0 && !adding ? (
           <EmptyState
             icon={Users}
             title="Henüz personel eklenmedi"
@@ -101,22 +105,40 @@ export default function CalisanlarPage() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-3">{c.tcKimlikNo || "-"}</td>
+                      <td className="px-4 py-3">{c.tcKimlikNo || "—"}</td>
                       <td className="px-4 py-3">
-                        {c.telefon ? <a className="text-[var(--brand)] hover:underline" href={`tel:${c.telefon}`}>{c.telefon}</a> : "-"}
+                        {c.telefon ? <a className="text-[var(--brand)] hover:underline" href={`tel:${c.telefon}`}>{c.telefon}</a> : "—"}
                       </td>
-                      <td className="px-4 py-3">{c.adres || "-"}</td>
-                      <td className="px-4 py-3">{c.acilDurumKisisi || "-"}</td>
-                      <td className="px-4 py-3">{c.acilTelefon || "-"}</td>
-                      <td className="px-4 py-3">{c.not || "-"}</td>
+                      <td className="px-4 py-3">{c.adres || "—"}</td>
+                      <td className="px-4 py-3">{c.acilDurumKisisi || "—"}</td>
+                      <td className="px-4 py-3">{c.acilTelefon || "—"}</td>
+                      <td className="px-4 py-3">{c.not || "—"}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2 justify-end">
                           <button className="icon-btn" onClick={() => startEdit(c)} title="Düzenle">
                             <Pencil className="w-4 h-4" />
                           </button>
-                          <button className="icon-btn hover:!text-[var(--brand)]" onClick={() => deleteCalisan(c.id)} title="Sil">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {silinecek === c.id ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
+                              <span className="text-[var(--brand-dark)] font-medium">Silinsin mi?</span>
+                              <button className="btn-secondary !py-1 !px-2 !text-xs" onClick={() => setSilinecek(null)}>
+                                Vazgeç
+                              </button>
+                              <button
+                                className="btn-primary !bg-[var(--brand)] hover:!bg-[var(--brand-dark)] !py-1 !px-2 !text-xs"
+                                onClick={() => {
+                                  setSilinecek(null);
+                                  deleteCalisan(c.id);
+                                }}
+                              >
+                                Evet, sil
+                              </button>
+                            </span>
+                          ) : (
+                            <button className="icon-btn hover:!text-[var(--brand)]" onClick={() => setSilinecek(c.id)} title="Sil">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

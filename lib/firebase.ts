@@ -1,5 +1,11 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from "firebase/firestore";
 import {
   initializeAuth,
   browserSessionPersistence,
@@ -27,7 +33,18 @@ function getFirebaseApp(): FirebaseApp {
 
 let _db: Firestore | null = null;
 export function getDb(): Firestore {
-  if (!_db) _db = getFirestore(getFirebaseApp());
+  if (!_db) {
+    // Offline cache in IndexedDB, shared by all open tabs: after a page change or the 5-minute lock,
+    // listeners resume from the cache and the server sends only what changed, saving reads.
+    try {
+      _db = initializeFirestore(getFirebaseApp(), {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+      });
+    } catch {
+      // Already initialized (e.g. after a hot reload): use the existing instance.
+      _db = getFirestore(getFirebaseApp());
+    }
+  }
   return _db;
 }
 
@@ -90,6 +107,19 @@ export async function loginWithPin(pin: string): Promise<void> {
   await signInWithEmailAndPassword(getAuthInstance(), KASA_EMAIL, pin);
 }
 
+// Run before signing out, so shared listeners close instead of failing with permission errors.
+const cikisIslemleri = new Set<() => void>();
+export function cikistaCalistir(fn: () => void) {
+  cikisIslemleri.add(fn);
+}
+
 export async function logout(): Promise<void> {
+  cikisIslemleri.forEach((fn) => fn());
   await signOut(getAuthInstance());
+}
+
+// Proof of login for the app's own API routes (backups); the server checks it with Firebase Admin.
+export async function idToken(): Promise<string> {
+  const user = await ensureSignedIn();
+  return user.getIdToken();
 }

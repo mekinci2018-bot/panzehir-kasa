@@ -6,12 +6,15 @@ import { AlertTriangle, Plus } from "lucide-react";
 import { kartOnerileri, useBankaHesaplari, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { addKasaKaydi, arsiveGonder, siparisKapat, tahsilEt } from "@/lib/db";
 import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
-import { daysSince, formatDate, formatTL, vadeDurumu, type VadeDurumu } from "@/lib/format";
+import { currentMonthKey, daysSince, formatDate, formatTL, monthLabel, vadeDurumu, type VadeDurumu } from "@/lib/format";
+import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
+import MonthNav from "./MonthNav";
 import type { KasaKaydi, Siparis, Yon } from "@/lib/types";
 import AmountModal from "./AmountModal";
 import VeresiyeModal from "./VeresiyeModal";
 import PageHeader from "./PageHeader";
 import EmptyState from "./EmptyState";
+import YukleniyorSatiri from "./YukleniyorSatiri";
 import FirmaLink from "./FirmaLink";
 import { SiparisOdemeModal } from "./SiparisDetayModal";
 
@@ -71,6 +74,7 @@ export default function OutstandingList({
   const [modalFor, setModalFor] = useState<KasaKaydi | null>(null);
   const [siparisFor, setSiparisFor] = useState<AcikKalem | null>(null);
   const [adding, setAdding] = useState(false);
+  const [ay, setAy] = useState(currentMonthKey);
 
   // Earliest due first; records without a due date fall back to their entry date.
   const items = useMemo(() => {
@@ -107,6 +111,19 @@ export default function OutstandingList({
     return list.sort((a, b) => ((a.vade ?? a.tarih) < (b.vade ?? b.tarih) ? -1 : 1));
   }, [kayitlar, siparisler, yon]);
 
+  // The selected month's open amounts, plus those carried over from earlier months. Fully closed
+  // records are not here at all, so they stay in their own month (Arşiv).
+  const gorunen = useMemo(() => items.filter((k) => aydaMi(k.tarih, ay) || aydanOnceMi(k.tarih, ay)), [items, ay]);
+  const toplamlar = useMemo(() => {
+    let buAy = 0;
+    let devreden = 0;
+    for (const k of gorunen) {
+      if (aydaMi(k.tarih, ay)) buAy += k.kalan;
+      else devreden += k.kalan;
+    }
+    return { buAy, devreden };
+  }, [gorunen, ay]);
+
   // A payment shouldn't default to an account that has since been deactivated.
   function varsayilanSecim(k: KasaKaydi) {
     const hesap = hesaplar.find((h) => h.id === k.bankaHesapId && !h.pasif);
@@ -117,14 +134,37 @@ export default function OutstandingList({
     <div className="page-enter flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <PageHeader title={title} description={subtitle} />
-        <button className="btn-primary inline-flex items-center gap-2" onClick={() => setAdding(true)}>
-          <Plus className="w-4 h-4" /> {newLabel}
-        </button>
+        <div className="flex items-center gap-3">
+          <MonthNav monthKey={ay} onChange={setAy} />
+          <button className="btn-primary inline-flex items-center gap-2" onClick={() => setAdding(true)}>
+            <Plus className="w-4 h-4" /> {newLabel}
+          </button>
+        </div>
       </div>
 
+      {gorunen.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--muted)] px-1">
+          <span>
+            {monthLabel(ay)}: <b className="tabular text-[var(--foreground)]">{formatTL(toplamlar.buAy)}</b>
+          </span>
+          <span className="text-[var(--border-strong)]">·</span>
+          <span>
+            Devreden: <b className="tabular text-[var(--foreground)]">{formatTL(toplamlar.devreden)}</b>
+          </span>
+          <span className="text-[var(--border-strong)]">·</span>
+          <span>
+            Toplam: <b className="tabular text-[var(--foreground)]">{formatTL(toplamlar.buAy + toplamlar.devreden)}</b>
+          </span>
+        </div>
+      )}
+
       <div className="card overflow-hidden">
-        {!loading && items.length === 0 ? (
+        {loading && items.length === 0 ? (
+          <YukleniyorSatiri />
+        ) : items.length === 0 ? (
           <EmptyState icon={icon} title={emptyTitle} description={emptyDescription} />
+        ) : gorunen.length === 0 ? (
+          <div className="px-5 py-8 text-sm text-center text-[var(--muted)]">{monthLabel(ay)} ve öncesinde açık kayıt yok.</div>
         ) : (
           <div className="table-scroll">
             <table className="w-full text-sm data-table">
@@ -139,7 +179,7 @@ export default function OutstandingList({
                 </tr>
               </thead>
               <tbody>
-                {items.map((k) => {
+                {gorunen.map((k) => {
                   const kalan = k.kalan;
                   const durum = k.vade ? vadeDurumu(k.vade) : "normal";
                   const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
@@ -150,6 +190,11 @@ export default function OutstandingList({
                         <div className="flex items-center gap-2">
                           <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
                           {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
+                          {!aydaMi(k.tarih, ay) && (
+                            <span className="badge bg-[#f1f1f4] text-[var(--muted)]" title="Önceki aydan kalan">
+                              Devreden · {kisaAyEtiketi(k.tarih, ay)}
+                            </span>
+                          )}
                           {overdue && (
                             <span className="badge badge-overdue">
                               <AlertTriangle className="w-3 h-3" /> Gecikmiş

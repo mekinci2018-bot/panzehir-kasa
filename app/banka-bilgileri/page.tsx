@@ -11,6 +11,7 @@ import { hesapEtiketi } from "@/components/OdemeSekliSelect";
 import FirmaLink from "@/components/FirmaLink";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 
 const empty = { banka: "", hesapSahibi: "", iban: "", aciklama: "" };
 const SON_HAREKET = 3;
@@ -97,6 +98,12 @@ export default function BankaBilgileriPage() {
 
       {secilmemis.length > 0 && (
         <HesapSecilmemis hareketler={secilmemis} kayitlar={kayitlar} hesaplar={hesaplar} />
+      )}
+
+      {loading && hesaplar.length === 0 && (
+        <div className="card">
+          <YukleniyorSatiri />
+        </div>
       )}
 
       {!loading && hesaplar.length === 0 && !adding && (
