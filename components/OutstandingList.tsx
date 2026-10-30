@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, Plus } from "lucide-react";
-import { useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
+import { kartOnerileri, useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
 import { addKasaKaydi, arsiveGonder, tahsilEt } from "@/lib/db";
 import { daysSince, formatDate, formatTL, vadeDurumu, type VadeDurumu } from "@/lib/format";
 import type { KasaKaydi, Yon } from "@/lib/types";
@@ -65,7 +65,7 @@ export default function OutstandingList({
   // A payment shouldn't default to an account that has since been deactivated.
   function varsayilanSecim(k: KasaKaydi) {
     const hesap = hesaplar.find((h) => h.id === k.bankaHesapId && !h.pasif);
-    return { odemeSekli: k.odemeSekli, bankaHesapId: hesap?.id ?? "" };
+    return { odemeSekli: k.odemeSekli, bankaHesapId: hesap?.id ?? "", kartAciklama: k.kartAciklama ?? "" };
   }
 
   return (
@@ -81,7 +81,7 @@ export default function OutstandingList({
         {!loading && items.length === 0 ? (
           <EmptyState icon={icon} title={emptyTitle} description={emptyDescription} />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>
@@ -152,6 +152,7 @@ export default function OutstandingList({
           title={`${actionLabel} — ${modalFor.firma}`}
           kalan={modalFor.toplamTutar - modalFor.alinanTutar}
           hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri(kayitlar)}
           defaultSecim={varsayilanSecim(modalFor)}
           onClose={() => setModalFor(null)}
           onConfirm={async (amount, secim) => {

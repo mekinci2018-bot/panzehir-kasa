@@ -9,6 +9,7 @@ export default function AmountModal({
   title,
   kalan,
   hesaplar,
+  kartOnerileri,
   defaultSecim,
   onClose,
   onConfirm,
@@ -16,6 +17,7 @@ export default function AmountModal({
   title: string;
   kalan: number;
   hesaplar: BankaHesabi[];
+  kartOnerileri?: string[];
   defaultSecim: OdemeSecimi;
   onClose: () => void;
   onConfirm: (amount: number, secim: OdemeSecimi) => void;
@@ -47,7 +49,7 @@ export default function AmountModal({
         />
 
         <label className="field-label mt-4">Ödeme şekli</label>
-        <OdemeSekliSelect value={secim} hesaplar={hesaplar} onChange={setSecim} size="md" />
+        <OdemeSekliSelect value={secim} hesaplar={hesaplar} kartOnerileri={kartOnerileri} onChange={setSecim} size="md" />
 
         <div className="flex gap-2 mt-6 justify-end">
           <button className="btn-secondary" onClick={onClose}>

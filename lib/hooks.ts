@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getDb, ensureSignedIn } from "./firebase";
 import { BANKALAR, CALISANLAR, KAYITLAR } from "./db";
+import { tumHareketler } from "./hareketler";
 import type { BankaHesabi, Calisan, KasaKaydi } from "./types";
 
+// Soft-deleted records are split off here, so no page or total ever counts them.
 export function useKasaKayitlari() {
-  const [kayitlar, setKayitlar] = useState<KasaKaydi[]>([]);
+  const [tumu, setTumu] = useState<KasaKaydi[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -15,14 +17,27 @@ export function useKasaKayitlari() {
     ensureSignedIn().then(() => {
       const q = query(collection(getDb(), KAYITLAR), orderBy("tarih", "desc"));
       unsubscribe = onSnapshot(q, (snap) => {
-        setKayitlar(snap.docs.map((d) => ({ id: d.id, ...d.data() } as KasaKaydi)));
+        setTumu(snap.docs.map((d) => ({ id: d.id, ...d.data() } as KasaKaydi)));
         setLoading(false);
       });
     });
     return () => unsubscribe();
   }, []);
 
-  return { kayitlar, loading };
+  const kayitlar = useMemo(() => tumu.filter((k) => !k.silindi), [tumu]);
+  const silinenler = useMemo(() => tumu.filter((k) => k.silindi), [tumu]);
+
+  return { kayitlar, silinenler, loading };
+}
+
+// Previously typed "Nereye çekildi?" values, most used first, for autocomplete.
+export function kartOnerileri(kayitlar: KasaKaydi[]): string[] {
+  const sayac = new Map<string, number>();
+  for (const h of tumHareketler(kayitlar)) {
+    if (h.odemeSekli !== "kart" || !h.kartAciklama) continue;
+    sayac.set(h.kartAciklama, (sayac.get(h.kartAciklama) ?? 0) + 1);
+  }
+  return [...sayac.entries()].sort((a, b) => b[1] - a[1]).map(([ad]) => ad);
 }
 
 export function useBankaHesaplari() {

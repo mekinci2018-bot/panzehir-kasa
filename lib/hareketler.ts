@@ -10,6 +10,8 @@ export interface Hareket {
   tutar: number;
   odemeSekli: OdemeSekli;
   bankaHesapId?: string;
+  kartAciklama?: string;
+  odemeIndex?: number; // index in odemeler; absent for the upfront (peşin) part
 }
 
 export function hareketlerOf(k: KasaKaydi): Hareket[] {
@@ -20,11 +22,11 @@ export function hareketlerOf(k: KasaKaydi): Hareket[] {
 
   const list: Hareket[] = [];
   if (pesin !== 0) {
-    list.push({ ...base, tarih: k.tarih, tutar: pesin, odemeSekli: k.odemeSekli, bankaHesapId: k.bankaHesapId });
+    list.push({ ...base, tarih: k.tarih, tutar: pesin, odemeSekli: k.odemeSekli, bankaHesapId: k.bankaHesapId, kartAciklama: k.kartAciklama });
   }
-  for (const o of odemeler) {
-    list.push({ ...base, tarih: o.tarih, tutar: o.tutar, odemeSekli: o.odemeSekli, bankaHesapId: o.bankaHesapId });
-  }
+  odemeler.forEach((o, odemeIndex) => {
+    list.push({ ...base, tarih: o.tarih, tutar: o.tutar, odemeSekli: o.odemeSekli, bankaHesapId: o.bankaHesapId, kartAciklama: o.kartAciklama, odemeIndex });
+  });
   return list;
 }
 

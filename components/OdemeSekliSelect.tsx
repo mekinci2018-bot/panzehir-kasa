@@ -1,11 +1,13 @@
 "use client";
 
+import { useId } from "react";
 import { ODEME_SEKLI_LABEL } from "@/lib/format";
 import type { BankaHesabi, OdemeSekli } from "@/lib/types";
 
 export interface OdemeSecimi {
   odemeSekli: OdemeSekli;
   bankaHesapId: string; // "" when none
+  kartAciklama: string; // "" when none; only for kart
 }
 
 export function hesapEtiketi(h: BankaHesabi): string {
@@ -15,14 +17,17 @@ export function hesapEtiketi(h: BankaHesabi): string {
 export default function OdemeSekliSelect({
   value,
   hesaplar,
+  kartOnerileri = [],
   onChange,
   size = "sm",
 }: {
   value: OdemeSecimi;
   hesaplar: BankaHesabi[];
+  kartOnerileri?: string[];
   onChange: (next: OdemeSecimi) => void;
   size?: "sm" | "md";
 }) {
+  const listId = useId();
   const cls = size === "sm" ? "select-field" : "select-field select-field-md";
   // Inactive accounts are hidden, except one an existing record is already linked to.
   const secilebilir = hesaplar.filter((h) => !h.pasif || h.id === value.bankaHesapId);
@@ -38,6 +43,7 @@ export default function OdemeSekliSelect({
           onChange({
             odemeSekli,
             bankaHesapId: odemeSekli === "havale" ? value.bankaHesapId || aktifler[0]?.id || "" : "",
+            kartAciklama: odemeSekli === "kart" ? value.kartAciklama : "",
           });
         }}
       >
@@ -47,6 +53,24 @@ export default function OdemeSekliSelect({
           </option>
         ))}
       </select>
+
+      {value.odemeSekli === "kart" && (
+        <>
+          <input
+            className={`${cls} min-w-0 flex-1 cursor-text`}
+            list={listId}
+            placeholder="Nereye çekildi?"
+            title="Örn. Ziraat POS"
+            value={value.kartAciklama}
+            onChange={(e) => onChange({ ...value, kartAciklama: e.target.value })}
+          />
+          <datalist id={listId}>
+            {kartOnerileri.map((o) => (
+              <option key={o} value={o} />
+            ))}
+          </datalist>
+        </>
+      )}
 
       {value.odemeSekli === "havale" &&
         (secilebilir.length === 0 ? (

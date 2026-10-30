@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Archive, ChevronRight } from "lucide-react";
-import { useKasaKayitlari } from "@/lib/hooks";
+import { kartOnerileri, useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL, monthLabel } from "@/lib/format";
 import type { KasaKaydi } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
+import KayitDetayModal from "@/components/KayitDetayModal";
 
 function groupByMonth(items: KasaKaydi[]) {
   const map = new Map<string, KasaKaydi[]>();
@@ -19,6 +20,9 @@ function groupByMonth(items: KasaKaydi[]) {
 
 export default function ArsivPage() {
   const { kayitlar, loading } = useKasaKayitlari();
+  const { hesaplar } = useBankaHesaplari();
+  const [detayId, setDetayId] = useState<string | null>(null);
+  const detay = detayId ? kayitlar.find((k) => k.id === detayId) : undefined;
 
   const tumKayitlar = useMemo(() => groupByMonth(kayitlar), [kayitlar]);
   const kapanmislar = useMemo(
@@ -30,7 +34,7 @@ export default function ArsivPage() {
     <div className="page-enter flex flex-col gap-10">
       <PageHeader
         title="Arşiv"
-        description="Tüm geçmiş kayıtlar, tamamen tahsil edilmiş/ödenmiş kayıtlar ve manuel arşivlenenler; ay ay listelenir."
+        description="Kasa'dan kaydedilen tüm kayıtlar ay ay listelenir. Düzenlemek ya da silmek için kayda tıklayın."
       />
 
       <section className="flex flex-col gap-3">
@@ -45,7 +49,7 @@ export default function ArsivPage() {
           </div>
         )}
         {tumKayitlar.map(([ay, items]) => (
-          <MonthAccordion key={ay} ay={ay} items={items} />
+          <MonthAccordion key={ay} ay={ay} items={items} onSelect={setDetayId} />
         ))}
       </section>
 
@@ -61,14 +65,24 @@ export default function ArsivPage() {
           </div>
         )}
         {kapanmislar.map(([ay, items]) => (
-          <MonthAccordion key={ay} ay={ay} items={items} />
+          <MonthAccordion key={ay} ay={ay} items={items} onSelect={setDetayId} />
         ))}
       </section>
+
+      {detay && (
+        <KayitDetayModal
+          key={detay.id}
+          kayit={detay}
+          hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri(kayitlar)}
+          onClose={() => setDetayId(null)}
+        />
+      )}
     </div>
   );
 }
 
-function MonthAccordion({ ay, items }: { ay: string; items: KasaKaydi[] }) {
+function MonthAccordion({ ay, items, onSelect }: { ay: string; items: KasaKaydi[]; onSelect: (id: string) => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -84,7 +98,7 @@ function MonthAccordion({ ay, items }: { ay: string; items: KasaKaydi[] }) {
         <span className="text-xs text-[var(--muted)]">{items.length} kayıt</span>
       </button>
       {open && (
-        <div className="overflow-x-auto">
+        <div className="table-scroll">
           <table className="w-full text-sm data-table border-t border-[var(--border)]">
             <thead>
               <tr>
@@ -98,10 +112,10 @@ function MonthAccordion({ ay, items }: { ay: string; items: KasaKaydi[] }) {
               </tr>
             </thead>
             <tbody>
-              {items
-                .sort((a, b) => (a.tarih < b.tarih ? 1 : -1))
+              {[...items]
+                .sort((a, b) => (a.tarih === b.tarih ? b.createdAt - a.createdAt : a.tarih < b.tarih ? 1 : -1))
                 .map((k) => (
-                  <tr key={k.id}>
+                  <tr key={k.id} className="cursor-pointer" onClick={() => onSelect(k.id)}>
                     <td className="tabular">{formatDate(k.tarih)}</td>
                     <td>
                       <div className="font-medium">{k.firma}</div>
@@ -112,7 +126,10 @@ function MonthAccordion({ ay, items }: { ay: string; items: KasaKaydi[] }) {
                         {k.yon === "gelen" ? "Giriş" : "Çıkış"}
                       </span>
                     </td>
-                    <td>{ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli}</td>
+                    <td>
+                      {ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli}
+                      {k.kartAciklama && <div className="text-xs text-[var(--muted)]">{k.kartAciklama}</div>}
+                    </td>
                     <td className="num">{formatTL(k.toplamTutar)}</td>
                     <td className="num">{formatTL(k.alinanTutar)}</td>
                     <td>

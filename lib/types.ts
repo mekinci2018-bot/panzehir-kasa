@@ -8,6 +8,7 @@ export interface Odeme {
   tutar: number;
   odemeSekli: OdemeSekli;
   bankaHesapId?: string;
+  kartAciklama?: string; // only for odemeSekli "kart": where it was charged, e.g. "Ziraat POS"
   createdAt: number;
 }
 
@@ -21,6 +22,7 @@ export interface KasaKaydi {
   alinanTutar: number;
   odemeSekli: OdemeSekli;
   bankaHesapId?: string; // only for odemeSekli "havale"; absent on older records
+  kartAciklama?: string; // only for odemeSekli "kart"; free text, no account needed
   // alinanTutar includes these; the remainder is the upfront (peşin) part.
   // Older records have no odemeler, so all of alinanTutar counts as upfront.
   odemeler?: Odeme[];
@@ -28,6 +30,9 @@ export interface KasaKaydi {
   vadeTarihi?: string; // YYYY-MM-DD, optional due date
   yon: Yon;
   durum: KayitDurum;
+  // Soft delete: kept in Çöp Kutusu and excluded from every list and total.
+  silindi?: boolean;
+  silinmeTarihi?: number;
   createdAt: number;
   updatedAt: number;
 }

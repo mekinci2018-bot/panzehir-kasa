@@ -72,7 +72,7 @@ export default function CalisanlarPage() {
             description="Aşağıdaki '+ Yeni Personel Ekle' butonuyla ilk kaydı ekleyebilirsin."
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>

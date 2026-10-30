@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Lock,
+  Trash2,
 } from "lucide-react";
 import { logout } from "@/lib/firebase";
 import Logo from "./Logo";
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/arsiv", label: "Arşiv", icon: Archive },
   { href: "/banka-bilgileri", label: "Banka Hesapları", icon: Landmark },
   { href: "/calisanlar", label: "Personel", icon: Users },
+  { href: "/cop-kutusu", label: "Çöp Kutusu", icon: Trash2 },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigate?: () => void }) {
