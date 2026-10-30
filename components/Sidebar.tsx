@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { logout } from "@/lib/firebase";
 import Logo from "./Logo";
+import InstallButton from "./InstallButton";
 
 const NAV = [
   { href: "/kasa", label: "Kasa", icon: Wallet },
@@ -54,7 +55,7 @@ function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigat
 
 function LockButton() {
   return (
-    <div className="px-3 py-4">
+    <div className="px-3 pt-2 pb-4">
       <button
         onClick={() => logout()}
         className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-[var(--sidebar-text)]/70 hover:bg-white/[0.04] hover:text-white transition-colors"
@@ -99,6 +100,7 @@ export default function Sidebar() {
             </div>
             <div className="h-px bg-white/[0.06] mx-4" />
             <NavLinks pathname={pathname} onNavigate={() => setOpen(false)} />
+            <InstallButton />
             <LockButton />
           </aside>
         </div>
@@ -112,6 +114,7 @@ export default function Sidebar() {
           </div>
         </div>
         <NavLinks pathname={pathname} />
+        <InstallButton />
         <LockButton />
       </aside>
     </>

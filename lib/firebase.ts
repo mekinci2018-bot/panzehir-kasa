@@ -1,7 +1,8 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import {
-  getAuth,
+  initializeAuth,
+  browserSessionPersistence,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
@@ -32,7 +33,9 @@ export function getDb(): Firestore {
 
 let _auth: Auth | null = null;
 function getAuthInstance(): Auth {
-  if (!_auth) _auth = getAuth(getFirebaseApp());
+  // Session persistence: the login lives only as long as this window/tab, so every launch of the
+  // installed app (or a new tab) asks for the PIN again instead of reusing a remembered login.
+  if (!_auth) _auth = initializeAuth(getFirebaseApp(), { persistence: browserSessionPersistence });
   return _auth;
 }
 

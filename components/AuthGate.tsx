@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { Lock } from "lucide-react";
 import { loginWithPin, watchAuth, type AuthDurum } from "@/lib/firebase";
+import { markActivity, useIdleLock } from "@/lib/useIdleLock";
 import Logo from "./Logo";
 
 const PIN_LENGTH = 6;
@@ -12,6 +13,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [durum, setDurum] = useState<AuthDurum>("yukleniyor");
 
   useEffect(() => watchAuth(setDurum), []);
+  useIdleLock(durum === "giris-var");
 
   if (durum === "yukleniyor") return <div className="min-h-screen bg-[var(--sidebar-bg)]" />;
   if (durum === "giris-yok") return <PinEkrani />;
@@ -38,6 +40,8 @@ function PinEkrani() {
     setBusy(true);
     setHata("");
     try {
+      // Fresh timestamp first, so the idle check doesn't see the pre-login value and lock at once.
+      markActivity();
       await loginWithPin(pin);
     } catch (err) {
       setHata(hataMesaji(err));
