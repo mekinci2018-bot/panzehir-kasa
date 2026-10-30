@@ -47,7 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AuthGate>
           <div className="flex flex-col md:flex-row min-h-screen">
             <Sidebar />
-            <main className="flex-1 px-4 py-6 md:px-12 md:py-10 max-w-[1400px] w-full">{children}</main>
+            <main className="flex-1 px-4 py-6 md:px-12 md:py-10 max-w-[1400px] w-full print:p-0 print:max-w-none">{children}</main>
           </div>
         </AuthGate>
       </body>

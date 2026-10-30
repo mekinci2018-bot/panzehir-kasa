@@ -16,7 +16,9 @@ export interface KasaKaydi {
   id: string;
   tarih: string; // YYYY-MM-DD
   ay: string; // YYYY-MM, derived from tarih
-  firma: string;
+  firma: string; // display name; for linked records the company name at the time of linking
+  firmaId?: string; // link to firmalar; absent on older free-text records until matched
+  personelId?: string; // set instead of firmaId when the counterparty is an employee (calisanlar)
   aciklama: string;
   toplamTutar: number;
   alinanTutar: number;
@@ -30,9 +32,24 @@ export interface KasaKaydi {
   vadeTarihi?: string; // YYYY-MM-DD, optional due date
   yon: Yon;
   durum: KayitDurum;
+  arsivTarihi?: number; // when "Arşive Gönder" closed the remaining amount; older archives fall back to updatedAt
   // Soft delete: kept in Çöp Kutusu and excluded from every list and total.
   silindi?: boolean;
   silinmeTarihi?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type FirmaTuru = "musteri" | "tedarikci" | "gider";
+
+export interface Firma {
+  id: string;
+  ad: string; // upper case, single spaces (lib/firma.ts firmaAdiDuzenle)
+  anahtar: string; // normalized for duplicate checks (firmaAnahtari); also the firmaAdlari lock id
+  tur?: FirmaTuru; // absent = "musteri"
+  kilitli?: boolean; // its firmaAdlari lock document exists
+  telefon?: string;
+  not?: string;
   createdAt: number;
   updatedAt: number;
 }

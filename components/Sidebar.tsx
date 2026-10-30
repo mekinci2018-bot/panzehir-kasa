@@ -14,6 +14,7 @@ import {
   X,
   Lock,
   Trash2,
+  Building2,
 } from "lucide-react";
 import { logout } from "@/lib/firebase";
 import Logo from "./Logo";
@@ -21,6 +22,7 @@ import InstallButton from "./InstallButton";
 
 const NAV = [
   { href: "/kasa", label: "Kasa", icon: Wallet },
+  { href: "/firmalar", label: "Firmalar", icon: Building2 },
   { href: "/alacaklar", label: "Alacaklar", icon: ArrowDownToLine },
   { href: "/verecekler", label: "Borçlar", icon: ArrowUpFromLine },
   { href: "/arsiv", label: "Arşiv", icon: Archive },
@@ -75,7 +77,7 @@ export default function Sidebar() {
 
   return (
     <>
-      <div className="md:hidden sticky top-0 z-40 h-14 bg-[var(--sidebar-bg)] flex items-center justify-between px-4">
+      <div className="md:hidden print:hidden sticky top-0 z-40 h-14 bg-[var(--sidebar-bg)] flex items-center justify-between px-4">
         <Logo compact />
         <button
           className="w-9 h-9 flex items-center justify-center rounded-lg text-white/80 hover:bg-white/10"
@@ -108,7 +110,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      <aside className="hidden md:flex w-60 shrink-0 h-screen sticky top-0 bg-[var(--sidebar-bg)] flex-col">
+      <aside className="hidden md:flex print:hidden w-60 shrink-0 h-screen sticky top-0 bg-[var(--sidebar-bg)] flex-col">
         <div className="px-6 pt-7 pb-6">
           <Logo />
           <div className="text-[10.5px] text-[var(--sidebar-text)]/70 mt-3 uppercase tracking-[0.18em]">

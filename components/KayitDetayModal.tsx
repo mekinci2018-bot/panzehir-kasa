@@ -6,6 +6,9 @@ import { kayitSil, updateKasaKaydi } from "@/lib/db";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
 import type { BankaHesabi, KasaKaydi, Yon } from "@/lib/types";
 import OdemeSekliSelect, { hesapEtiketi, type OdemeSecimi } from "./OdemeSekliSelect";
+import FirmaSecici, { type FirmaSecimi } from "./FirmaSecici";
+import FirmaLink from "./FirmaLink";
+import { useCalisanlar, useFirmalar } from "@/lib/hooks";
 
 function girisZamani(ms: number): string {
   return new Date(ms).toLocaleString("tr-TR", {
@@ -29,9 +32,15 @@ export default function KayitDetayModal({
   kartOnerileri: string[];
   onClose: () => void;
 }) {
+  const { firmalar } = useFirmalar();
+  const { calisanlar } = useCalisanlar();
+  const [firma, setFirma] = useState<FirmaSecimi>({
+    firmaId: kayit.firmaId ?? "",
+    personelId: kayit.personelId ?? "",
+    firma: kayit.firma,
+  });
   const [form, setForm] = useState({
     tarih: kayit.tarih,
-    firma: kayit.firma,
     aciklama: kayit.aciklama,
     toplamTutar: String(kayit.toplamTutar),
     alinanTutar: String(kayit.alinanTutar),
@@ -54,13 +63,21 @@ export default function KayitDetayModal({
   const kalan = (Number(form.toplamTutar) || 0) - (Number(form.alinanTutar) || 0);
   const odemeler = kayit.odemeler ?? [];
 
+  const toplam = Number(form.toplamTutar) || 0;
+  const alinan = Number(form.alinanTutar) || 0;
+  const yeniDurum: KasaKaydi["durum"] = toplam > 0 && alinan >= toplam ? "tamamlandi" : "aktif";
+
   async function kaydet() {
-    if (!form.firma.trim() || busy) return;
+    if (!firma.firma.trim() || busy) return;
     setBusy(true);
     try {
       await updateKasaKaydi(kayit.id, {
         tarih: form.tarih,
-        firma: form.firma.trim(),
+        firma: firma.firma.trim(),
+        // Older free-text records may stay unlinked; a picked company or employee links them.
+        ...(firma.firmaId || firma.personelId ? { firmaId: firma.firmaId, personelId: firma.personelId ?? "" } : {}),
+        // Archived records stay archived; otherwise the status follows the edited amounts.
+        durum: kayit.durum === "arsiv" ? "arsiv" : yeniDurum,
         aciklama: form.aciklama.trim(),
         toplamTutar: Number(form.toplamTutar) || 0,
         alinanTutar: Number(form.alinanTutar) || 0,
@@ -98,7 +115,9 @@ export default function KayitDetayModal({
       <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="px-6 pt-5 pb-4 flex items-start justify-between gap-4 border-b border-[var(--border)]">
           <div className="min-w-0">
-            <h3 className="font-semibold text-base truncate">{kayit.firma || "Kayıt"}</h3>
+            <h3 className="font-semibold text-base truncate">
+              <FirmaLink firmaId={kayit.firmaId} personelId={kayit.personelId} ad={kayit.firma || "Kayıt"} />
+            </h3>
             <p className="text-xs text-[var(--muted)] mt-0.5">
               Girildi: <span className="tabular">{girisZamani(kayit.createdAt)}</span>
               {kayit.kaynak === "veresiye" && " · Veresiye"}
@@ -136,7 +155,10 @@ export default function KayitDetayModal({
           </div>
           <div>
             <label className="field-label">Firma / Kişi</label>
-            <input className="input-field" value={form.firma} onChange={(e) => setForm({ ...form, firma: e.target.value })} />
+            <FirmaSecici value={firma} firmalar={firmalar} calisanlar={calisanlar} onChange={setFirma} className="input-field" placeholder="Firma adı ya da kişi" />
+            {!firma.firmaId && !firma.personelId && firma.firma.trim() && (
+              <p className="text-[11px] text-[var(--accent-orange)] mt-1">Firmalar listesine bağlı değil; listeden seçerek bağlayabilirsiniz.</p>
+            )}
           </div>
           <div>
             <label className="field-label">Açıklama</label>
@@ -213,7 +235,7 @@ export default function KayitDetayModal({
                 <button type="button" className="btn-secondary" onClick={onClose}>
                   Kapat
                 </button>
-                <button type="submit" className="btn-primary disabled:opacity-40" disabled={busy || !form.firma.trim()}>
+                <button type="submit" className="btn-primary disabled:opacity-40" disabled={busy || !firma.firma.trim()}>
                   Kaydet
                 </button>
               </div>

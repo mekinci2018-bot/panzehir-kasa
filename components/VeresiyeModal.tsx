@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import { todayISO } from "@/lib/format";
+import { useCalisanlar, useFirmalar } from "@/lib/hooks";
+import FirmaSecici, { type FirmaSecimi } from "./FirmaSecici";
 
 export interface VeresiyeForm {
   tarih: string;
   firma: string;
+  firmaId: string;
+  personelId: string;
   aciklama: string;
   tutar: number;
   vadeTarihi: string; // "" when none
@@ -21,20 +25,22 @@ export default function VeresiyeModal({
   onConfirm: (form: VeresiyeForm) => Promise<void>;
 }) {
   const [tarih, setTarih] = useState(todayISO());
-  const [firma, setFirma] = useState("");
+  const { firmalar } = useFirmalar();
+  const { calisanlar } = useCalisanlar();
+  const [firma, setFirma] = useState<FirmaSecimi>({ firmaId: "", firma: "" });
   const [aciklama, setAciklama] = useState("");
   const [tutar, setTutar] = useState("");
   const [vadeTarihi, setVadeTarihi] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const gecerli = firma.trim() !== "" && Number(tutar) > 0;
+  const gecerli = !!(firma.firmaId || firma.personelId) && Number(tutar) > 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!gecerli || saving) return;
     setSaving(true);
     try {
-      await onConfirm({ tarih, firma: firma.trim(), aciklama: aciklama.trim(), tutar: Number(tutar), vadeTarihi });
+      await onConfirm({ tarih, firma: firma.firma, firmaId: firma.firmaId, personelId: firma.personelId ?? "", aciklama: aciklama.trim(), tutar: Number(tutar), vadeTarihi });
     } finally {
       setSaving(false);
     }
@@ -47,7 +53,7 @@ export default function VeresiyeModal({
 
         <div>
           <label className="field-label">Firma / Kişi</label>
-          <input className="input-field" autoFocus value={firma} onChange={(e) => setFirma(e.target.value)} placeholder="Firma adı ya da kişi" />
+          <FirmaSecici value={firma} firmalar={firmalar} calisanlar={calisanlar} onChange={setFirma} className="input-field" placeholder="Firma adı ya da kişi" autoFocus />
         </div>
         <div>
           <label className="field-label">Açıklama</label>

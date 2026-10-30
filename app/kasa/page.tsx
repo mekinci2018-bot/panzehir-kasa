@@ -7,10 +7,12 @@ import StatStrip from "@/components/StatStrip";
 import PageHeader from "@/components/PageHeader";
 import KayitDetayModal from "@/components/KayitDetayModal";
 import { hesapEtiketi } from "@/components/OdemeSekliSelect";
-import { kartOnerileri, useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
+import FirmaLink from "@/components/FirmaLink";
+import { kartOnerileri, useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari } from "@/lib/hooks";
+import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
 import { tumHareketler, signed } from "@/lib/hareketler";
-import { ODEME_SEKLI_LABEL, formatTL, todayISO } from "@/lib/format";
+import { ODEME_SEKLI_LABEL, bakiyeEtiketi, formatTL, isoDayOf, todayISO } from "@/lib/format";
 import type { BankaHesabi, KasaKaydi } from "@/lib/types";
 import KayitRow, { type DraftKayit } from "./KayitRow";
 
@@ -20,6 +22,8 @@ const GERI_AL_MS = 5000;
 const emptyDraft = (): DraftKayit => ({
   tarih: todayISO(),
   firma: "",
+  firmaId: "",
+  personelId: "",
   aciklama: "",
   toplamTutar: "",
   alinanTutar: "",
@@ -45,15 +49,11 @@ function focusFirstEmptyDraft() {
   });
 }
 
-function localDay(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 export default function KasaPage() {
   const { kayitlar, loading } = useKasaKayitlari();
   const { hesaplar } = useBankaHesaplari();
+  const { firmalar } = useFirmalar();
+  const { calisanlar } = useCalisanlar();
   const [drafts, setDrafts] = useState<DraftSlot[]>(() => Array.from({ length: DRAFT_COUNT }, () => newSlot()));
   const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit } | null>(null);
   const geriAlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,6 +64,22 @@ export default function KasaPage() {
   }, []);
 
   const oneriler = useMemo(() => kartOnerileri(kayitlar), [kayitlar]);
+  const ozetler = useMemo(() => cariOzetleri(kayitlar), [kayitlar]);
+  const personelOzetleri = useMemo(() => cariOzetleri(kayitlar, "personelId"), [kayitlar]);
+
+  // Customers and suppliers show their balance; expense items and staff only what was spent.
+  function cariOzetMetni(d: DraftKayit): string | undefined {
+    if (d.personelId) {
+      const o = personelOzetleri.get(d.personelId);
+      return `Personel · toplam ödeme ${formatTL(o?.harcama ?? 0)}`;
+    }
+    const firma = firmalar.find((f) => f.id === d.firmaId);
+    if (!firma) return undefined;
+    const o = ozetler.get(firma.id);
+    if (firmaTuru(firma) === "gider") return `Gider kalemi · toplam harcama ${formatTL(o?.harcama ?? 0)}`;
+    if (!o) return "Yeni cari · henüz hareket yok";
+    return `Bakiye ${bakiyeEtiketi(o.bakiye)} · ${o.kayitSayisi} kayıt`;
+  }
 
   const stats = useMemo(() => {
     let nakit = 0;
@@ -90,7 +106,7 @@ export default function KasaPage() {
   // Entered today (by save time, not the record's own date), newest first.
   const bugunGirilenler = useMemo(() => {
     const bugun = todayISO();
-    return kayitlar.filter((k) => localDay(k.createdAt) === bugun).sort((a, b) => b.createdAt - a.createdAt);
+    return kayitlar.filter((k) => isoDayOf(k.createdAt) === bugun).sort((a, b) => b.createdAt - a.createdAt);
   }, [kayitlar]);
 
   const alacaklar = useMemo(
@@ -121,7 +137,7 @@ export default function KasaPage() {
 
   async function saveDraft(key: number) {
     const slot = drafts.find((s) => s.key === key);
-    if (!slot || !slot.value.firma.trim()) return;
+    if (!slot || !(slot.value.firmaId || slot.value.personelId)) return;
     const d = slot.value;
 
     // The saved row leaves the form and a fresh empty row is appended, keeping DRAFT_COUNT.
@@ -132,6 +148,8 @@ export default function KasaPage() {
       const ref = await addKasaKaydi({
         tarih: d.tarih,
         firma: d.firma.trim(),
+        firmaId: d.firmaId,
+        personelId: d.personelId,
         aciklama: d.aciklama.trim(),
         toplamTutar: Number(d.toplamTutar) || 0,
         alinanTutar: Number(d.alinanTutar) || 0,
@@ -185,8 +203,8 @@ export default function KasaPage() {
           <table className="w-full text-sm data-table">
             <thead>
               <tr>
-                <th className="w-[140px]">Tarih</th>
                 <th>Firma / Açıklama</th>
+                <th className="w-[140px]">Tarih</th>
                 <th className="w-[130px] text-right">Toplam Tutar</th>
                 <th className="w-[280px]">Ödeme Şekli</th>
                 <th className="w-[100px]">İşlem</th>
@@ -202,6 +220,9 @@ export default function KasaPage() {
                   key={`draft-${s.key}`}
                   value={s.value}
                   hesaplar={hesaplar}
+                  firmalar={firmalar}
+                  calisanlar={calisanlar}
+                  cariOzet={cariOzetMetni(s.value)}
                   kartOnerileri={oneriler}
                   onSave={() => saveDraft(s.key)}
                   onChange={(patch) => updateDraft(s.key, patch)}
@@ -321,13 +342,16 @@ function BugunGirilenler({
             const saat = new Date(k.createdAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
             return (
               <li key={k.id}>
-                <button
-                  className="w-full text-left px-2 py-2 rounded-lg hover:bg-[var(--surface-hover)] flex items-center gap-4 text-sm transition-colors"
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className="w-full text-left px-2 py-2 rounded-lg hover:bg-[var(--surface-hover)] flex items-center gap-4 text-sm transition-colors cursor-pointer"
                   onClick={() => onSelect(k.id)}
+                  onKeyDown={(e) => e.key === "Enter" && onSelect(k.id)}
                 >
                   <span className="tabular text-xs text-[var(--muted)] w-10 shrink-0">{saat}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="font-medium truncate block">{k.firma}</span>
+                    <span className="block truncate"><FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" /></span>
                     <span className="text-xs text-[var(--muted)] truncate block">
                       {[k.aciklama, odeme].filter(Boolean).join(" · ")}
                     </span>
@@ -336,7 +360,7 @@ function BugunGirilenler({
                     {k.yon === "gelen" ? "+" : "−"}
                     {formatTL(k.toplamTutar)}
                   </span>
-                </button>
+                </div>
               </li>
             );
           })}
@@ -372,7 +396,7 @@ function PreviewList({
           {items.map((k) => (
             <li key={k.id} className="py-2.5 flex items-center justify-between gap-4 text-sm">
               <div className="min-w-0">
-                <div className="font-medium truncate">{k.firma}</div>
+                <span className="block truncate"><FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" /></span>
                 <div className="text-xs text-[var(--muted)] truncate">{k.aciklama || "—"}</div>
               </div>
               <div

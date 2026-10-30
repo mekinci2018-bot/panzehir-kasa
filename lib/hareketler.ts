@@ -3,6 +3,8 @@ import type { KasaKaydi, OdemeSekli, Yon } from "./types";
 // A single money movement: the upfront part of a record, or a later payment on it.
 export interface Hareket {
   kayitId: string;
+  firmaId?: string;
+  personelId?: string;
   tarih: string;
   firma: string;
   aciklama: string;
@@ -18,7 +20,7 @@ export function hareketlerOf(k: KasaKaydi): Hareket[] {
   const odemeler = k.odemeler ?? [];
   const sonradan = odemeler.reduce((sum, o) => sum + o.tutar, 0);
   const pesin = k.alinanTutar - sonradan;
-  const base = { kayitId: k.id, firma: k.firma, aciklama: k.aciklama, yon: k.yon };
+  const base = { kayitId: k.id, firmaId: k.firmaId, personelId: k.personelId, firma: k.firma, aciklama: k.aciklama, yon: k.yon };
 
   const list: Hareket[] = [];
   if (pesin !== 0) {

@@ -11,6 +11,7 @@ import AmountModal from "./AmountModal";
 import VeresiyeModal from "./VeresiyeModal";
 import PageHeader from "./PageHeader";
 import EmptyState from "./EmptyState";
+import FirmaLink from "./FirmaLink";
 
 const OVERDUE_DAYS = 30;
 
@@ -103,7 +104,7 @@ export default function OutstandingList({
                       <td className="tabular">{formatDate(k.tarih)}</td>
                       <td className="font-medium">
                         <div className="flex items-center gap-2">
-                          {k.firma}
+                          <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
                           {overdue && (
                             <span className="badge badge-overdue">
                               <AlertTriangle className="w-3 h-3" /> Gecikmiş
@@ -171,6 +172,8 @@ export default function OutstandingList({
             await addKasaKaydi({
               tarih: f.tarih,
               firma: f.firma,
+              firmaId: f.firmaId,
+              personelId: f.personelId,
               aciklama: f.aciklama,
               toplamTutar: f.tutar,
               alinanTutar: 0,

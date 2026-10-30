@@ -28,6 +28,18 @@ export function todayISO(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// Local calendar day of a timestamp, as YYYY-MM-DD.
+export function isoDayOf(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function bakiyeEtiketi(bakiye: number): string {
+  if (Math.abs(bakiye) < 0.005) return formatTL(0);
+  return `${formatTL(Math.abs(bakiye))} ${bakiye > 0 ? "Alacak" : "Borç"}`;
+}
+
 export function monthKeyOf(iso: string): string {
   return iso.slice(0, 7); // YYYY-MM
 }

@@ -8,6 +8,7 @@ import { tumHareketler, signed, type Hareket } from "@/lib/hareketler";
 import { formatDate, formatTL } from "@/lib/format";
 import type { BankaHesabi, KasaKaydi } from "@/lib/types";
 import { hesapEtiketi } from "@/components/OdemeSekliSelect";
+import FirmaLink from "@/components/FirmaLink";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 
@@ -355,7 +356,7 @@ function HesapKarti({
             {gorunen.map((h, i) => (
               <li key={`${h.kayitId}-${i}`} className="px-5 py-2.5 flex items-center justify-between gap-4 text-sm">
                 <div className="min-w-0">
-                  <div className="truncate">{h.firma}</div>
+                  <div className="truncate"><FirmaLink firmaId={h.firmaId} personelId={h.personelId} ad={h.firma} /></div>
                   <div className="text-xs text-[var(--muted)] tabular">
                     {formatDate(h.tarih)}
                     {h.aciklama ? ` · ${h.aciklama}` : ""}

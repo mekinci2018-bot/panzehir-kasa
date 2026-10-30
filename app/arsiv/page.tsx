@@ -8,6 +8,7 @@ import type { KasaKaydi } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import KayitDetayModal from "@/components/KayitDetayModal";
+import FirmaLink from "@/components/FirmaLink";
 
 function groupByMonth(items: KasaKaydi[]) {
   const map = new Map<string, KasaKaydi[]>();
@@ -118,7 +119,7 @@ function MonthAccordion({ ay, items, onSelect }: { ay: string; items: KasaKaydi[
                   <tr key={k.id} className="cursor-pointer" onClick={() => onSelect(k.id)}>
                     <td className="tabular">{formatDate(k.tarih)}</td>
                     <td>
-                      <div className="font-medium">{k.firma}</div>
+                      <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
                       <div className="text-xs text-[var(--muted)]">{k.aciklama}</div>
                     </td>
                     <td>

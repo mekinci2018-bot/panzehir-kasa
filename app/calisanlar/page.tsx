@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Users, Pencil, Trash2, Plus } from "lucide-react";
-import { useCalisanlar } from "@/lib/hooks";
+import { useCalisanlar, useKasaKayitlari } from "@/lib/hooks";
+import { cariOzetleri } from "@/lib/firma";
+import { formatTL } from "@/lib/format";
 import { addCalisan, deleteCalisan, updateCalisan } from "@/lib/db";
 import type { Calisan } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
@@ -30,6 +32,9 @@ const FIELDS: { key: keyof typeof empty; label: string }[] = [
 
 export default function CalisanlarPage() {
   const { calisanlar, loading } = useCalisanlar();
+  const { kayitlar } = useKasaKayitlari();
+  // Kasa records linked with personelId (picked from the Personel group in the company picker).
+  const ozetler = useMemo(() => cariOzetleri(kayitlar, "personelId"), [kayitlar]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [adding, setAdding] = useState(false);
@@ -88,7 +93,14 @@ export default function CalisanlarPage() {
                     <EditRow key={c.id} form={form} setForm={setForm} onSave={() => saveEdit(c.id)} onCancel={() => setEditingId(null)} />
                   ) : (
                     <tr key={c.id} className="border-t border-[var(--border)]">
-                      <td className="px-4 py-3 font-medium">{c.adSoyad}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{c.adSoyad}</div>
+                        {ozetler.has(c.id) && (
+                          <div className="text-xs text-[var(--muted)] tabular">
+                            Kasa: {formatTL(ozetler.get(c.id)!.harcama)} ödeme · {ozetler.get(c.id)!.kayitSayisi} kayıt
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{c.tcKimlikNo || "-"}</td>
                       <td className="px-4 py-3">
                         {c.telefon ? <a className="text-[var(--brand)] hover:underline" href={`tel:${c.telefon}`}>{c.telefon}</a> : "-"}

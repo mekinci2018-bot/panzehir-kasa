@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getDb, ensureSignedIn } from "./firebase";
-import { BANKALAR, CALISANLAR, KAYITLAR } from "./db";
+import { BANKALAR, CALISANLAR, FIRMALAR, KAYITLAR } from "./db";
 import { tumHareketler } from "./hareketler";
-import type { BankaHesabi, Calisan, KasaKaydi } from "./types";
+import type { BankaHesabi, Calisan, Firma, KasaKaydi } from "./types";
 
 // Soft-deleted records are split off here, so no page or total ever counts them.
 export function useKasaKayitlari() {
@@ -38,6 +38,25 @@ export function kartOnerileri(kayitlar: KasaKaydi[]): string[] {
     sayac.set(h.kartAciklama, (sayac.get(h.kartAciklama) ?? 0) + 1);
   }
   return [...sayac.entries()].sort((a, b) => b[1] - a[1]).map(([ad]) => ad);
+}
+
+export function useFirmalar() {
+  const [firmalar, setFirmalar] = useState<Firma[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let unsubscribe = () => {};
+    ensureSignedIn().then(() => {
+      unsubscribe = onSnapshot(collection(getDb(), FIRMALAR), (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Firma));
+        setFirmalar(list.sort((a, b) => a.ad.localeCompare(b.ad, "tr")));
+        setLoading(false);
+      });
+    });
+    return () => unsubscribe();
+  }, []);
+
+  return { firmalar, loading };
 }
 
 export function useBankaHesaplari() {

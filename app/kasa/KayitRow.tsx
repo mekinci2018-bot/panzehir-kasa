@@ -1,12 +1,15 @@
 "use client";
 
 import { Check } from "lucide-react";
-import type { BankaHesabi, OdemeSekli, Yon } from "@/lib/types";
+import type { BankaHesabi, Calisan, Firma, OdemeSekli, Yon } from "@/lib/types";
 import OdemeSekliSelect from "@/components/OdemeSekliSelect";
+import FirmaSecici from "@/components/FirmaSecici";
 
 export interface DraftKayit {
   tarih: string;
   firma: string;
+  firmaId: string; // a company or an employee (personelId) is required to save
+  personelId: string;
   aciklama: string;
   toplamTutar: string;
   alinanTutar: string;
@@ -20,12 +23,18 @@ export interface DraftKayit {
 export default function KayitRow({
   value,
   hesaplar,
+  firmalar,
+  calisanlar,
+  cariOzet,
   kartOnerileri,
   onSave,
   onChange,
 }: {
   value: DraftKayit;
   hesaplar: BankaHesabi[];
+  firmalar: Firma[];
+  calisanlar: Calisan[];
+  cariOzet?: string; // live balance summary of the chosen company
   kartOnerileri: string[];
   onSave: () => void;
   onChange: (patch: Partial<DraftKayit>) => void;
@@ -34,36 +43,51 @@ export default function KayitRow({
     onChange({ [key]: v } as Partial<DraftKayit>);
   }
 
-  // Enter anywhere in the row saves it, like committing a spreadsheet row.
+  const bagli = !!(value.firmaId || value.personelId);
+
+  // Enter anywhere in the row saves it, like committing a spreadsheet row. Without a company from
+  // the list, Enter sends the cursor back to the company cell instead.
   function handleKeyDown(e: React.KeyboardEvent<HTMLTableRowElement>) {
     if (e.key !== "Enter" || (e.target as HTMLElement).tagName === "BUTTON") return;
     e.preventDefault();
-    if (value.firma.trim()) onSave();
+    if (bagli) onSave();
+    else if (value.firma.trim()) {
+      const firmaInput = e.currentTarget.querySelector<HTMLInputElement>("input[data-field=firma]");
+      firmaInput?.focus();
+      firmaInput?.click();
+    }
   }
 
   return (
     <tr className="kasa-row" data-draft="" onKeyDown={handleKeyDown}>
       <td className="align-top">
-        <input
-          type="date"
-          className="input-sm"
-          value={value.tarih}
-          onChange={(e) => set("tarih", e.target.value)}
-        />
-      </td>
-      <td className="align-top">
-        <input
-          className="input-sm font-medium"
-          data-field="firma"
+        <FirmaSecici
+          value={{ firmaId: value.firmaId, personelId: value.personelId, firma: value.firma }}
+          firmalar={firmalar}
+          calisanlar={calisanlar}
           placeholder="Firma adı ya da kişi"
-          value={value.firma}
-          onChange={(e) => set("firma", e.target.value)}
+          onChange={(v) => onChange({ firmaId: v.firmaId, personelId: v.personelId ?? "", firma: v.firma })}
         />
+        {bagli && cariOzet && (
+          <div className="px-2 text-[11px] text-[var(--muted)] tabular truncate">{cariOzet}</div>
+        )}
+        {!bagli && value.firma.trim() && (
+          <div className="px-2 text-[11px] text-[var(--accent-orange)]">Listeden seçin ya da yeni firma ekleyin</div>
+        )}
         <input
           className="input-sm text-xs text-[var(--muted)]"
           placeholder="Açıklama (opsiyonel)"
           value={value.aciklama}
           onChange={(e) => set("aciklama", e.target.value)}
+        />
+      </td>
+      <td className="align-top">
+        <input
+          type="date"
+          className="input-sm"
+          tabIndex={-1}
+          value={value.tarih}
+          onChange={(e) => set("tarih", e.target.value)}
         />
       </td>
       <td className="align-top">
@@ -108,8 +132,8 @@ export default function KayitRow({
             tabIndex={-1}
             className="icon-btn hover:!text-[var(--accent-green)] disabled:opacity-30"
             onClick={onSave}
-            disabled={!value.firma.trim()}
-            title="Arşive kaydet (Enter)"
+            disabled={!bagli}
+            title={bagli ? "Arşive kaydet (Enter)" : "Önce listeden firma seçin"}
           >
             <Check className="w-4 h-4" />
           </button>
