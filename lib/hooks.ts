@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { getDb, ensureSignedIn } from "./firebase";
-import { BANKALAR, CALISANLAR, FIRMALAR, KAYITLAR } from "./db";
+import { BANKALAR, CALISANLAR, FIRMALAR, GORSELLER, KAYITLAR, ONIZLEMELER, SIPARISLER } from "./db";
 import { tumHareketler } from "./hareketler";
-import type { BankaHesabi, Calisan, Firma, KasaKaydi } from "./types";
+import type { BankaHesabi, Calisan, Firma, Gorsel, KasaKaydi, Siparis } from "./types";
 
 // Soft-deleted records are split off here, so no page or total ever counts them.
 export function useKasaKayitlari() {
@@ -38,6 +38,56 @@ export function kartOnerileri(kayitlar: KasaKaydi[]): string[] {
     sayac.set(h.kartAciklama, (sayac.get(h.kartAciklama) ?? 0) + 1);
   }
   return [...sayac.entries()].sort((a, b) => b[1] - a[1]).map(([ad]) => ad);
+}
+
+// Same split as useKasaKayitlari: deleted orders only show in Çöp Kutusu.
+export function useSiparisler() {
+  const [tumu, setTumu] = useState<Siparis[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let unsubscribe = () => {};
+    ensureSignedIn().then(() => {
+      unsubscribe = onSnapshot(collection(getDb(), SIPARISLER), (snap) => {
+        setTumu(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Siparis)));
+        setLoading(false);
+      });
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const siparisler = useMemo(
+    () => tumu.filter((s) => !s.silindi).sort((a, b) => (a.tarih === b.tarih ? b.createdAt - a.createdAt : a.tarih < b.tarih ? 1 : -1)),
+    [tumu]
+  );
+  const silinenler = useMemo(() => tumu.filter((s) => s.silindi), [tumu]);
+
+  return { siparisler, silinenler, loading };
+}
+
+// Previews are fetched once per id and kept for the session; images never change after upload.
+const onizlemeCache = new Map<string, Promise<string | null>>();
+
+export function onizlemeGetir(id: string): Promise<string | null> {
+  let p = onizlemeCache.get(id);
+  if (!p) {
+    p = ensureSignedIn()
+      .then(() => getDoc(doc(getDb(), ONIZLEMELER, id)))
+      .then((snap) => (snap.exists() ? (snap.data().onizleme as string) : null))
+      .catch((err) => {
+        console.error(err);
+        onizlemeCache.delete(id);
+        return null;
+      });
+    onizlemeCache.set(id, p);
+  }
+  return p;
+}
+
+export async function gorselGetir(id: string): Promise<Gorsel | null> {
+  await ensureSignedIn();
+  const snap = await getDoc(doc(getDb(), GORSELLER, id));
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Gorsel) : null;
 }
 
 export function useFirmalar() {

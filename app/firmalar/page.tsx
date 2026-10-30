@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Building2, Link2, Merge, Pencil, Plus, Search, Wand2 } from "lucide-react";
-import { useFirmalar, useKasaKayitlari } from "@/lib/hooks";
+import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import { firmaSiparisOzetleri, siparisOdemeleri } from "@/lib/siparis";
 import {
   addFirma,
   firmalariBirlestir,
@@ -14,7 +15,7 @@ import {
 } from "@/lib/db";
 import { benzerFirmalar, cariOzetleri, FIRMA_TURU_LABEL, firmaAdiDuzenle, firmaAnahtari, firmaTuru } from "@/lib/firma";
 import { formatDate, formatTL } from "@/lib/format";
-import type { Firma, FirmaTuru, KasaKaydi } from "@/lib/types";
+import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import BakiyeHucre from "@/components/BakiyeHucre";
@@ -39,6 +40,8 @@ export default function FirmalarPage() {
   const { kayitlar, silinenler } = useKasaKayitlari();
   // Renames and merges also carry records sitting in Çöp Kutusu, so a restore lands on the right company.
   const tumKayitlar = useMemo(() => [...kayitlar, ...silinenler], [kayitlar, silinenler]);
+  const { siparisler, silinenler: silinenSiparisler } = useSiparisler();
+  const tumSiparisler = useMemo(() => [...siparisler, ...silinenSiparisler], [siparisler, silinenSiparisler]);
   const [sekme, setSekme] = useState<FirmaTuru>("musteri");
   const [arama, setArama] = useState("");
   const [secili, setSecili] = useState<string[]>([]);
@@ -53,7 +56,9 @@ export default function FirmalarPage() {
     kilitleriTamamla(firmalar).catch((err) => console.error(err));
   }, [firmalar, loading]);
 
-  const ozetler = useMemo(() => cariOzetleri(kayitlar), [kayitlar]);
+  const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
+  const ozetler = useMemo(() => cariOzetleri(kayitlar, "firmaId", siparisler, odemeler), [kayitlar, siparisler, odemeler]);
+  const siparisOzetleri = useMemo(() => firmaSiparisOzetleri(siparisler, odemeler), [siparisler, odemeler]);
 
   const sayilar = useMemo(() => {
     const s: Record<FirmaTuru, number> = { musteri: 0, tedarikci: 0, gider: 0 };
@@ -180,15 +185,16 @@ export default function FirmalarPage() {
                   <th className="w-[44px]"></th>
                   <th>{gider ? "Gider Kalemi" : "Firma"}</th>
                   {!gider && <th className="w-[150px]">Telefon</th>}
-                  <th className="w-[90px] text-right">Kayıt</th>
+                  <th className="w-[90px] text-right">{gider ? "Kayıt" : "Sipariş"}</th>
                   <th className="w-[170px] text-right">{gider ? "Toplam Harcama" : "Bakiye"}</th>
-                  <th className="w-[120px]">Son işlem</th>
+                  <th className="w-[120px]">{gider ? "Son işlem" : "Son sipariş"}</th>
                   <th className="w-[52px]"></th>
                 </tr>
               </thead>
               <tbody>
                 {liste.map((f) => {
                   const o = ozetler.get(f.id);
+                  const so = siparisOzetleri.get(f.id);
                   return (
                     <tr key={f.id}>
                       <td>
@@ -207,9 +213,11 @@ export default function FirmalarPage() {
                         {f.not && <div className="text-xs text-[var(--muted)] truncate max-w-md">{f.not}</div>}
                       </td>
                       {!gider && <td className="tabular text-[var(--muted)]">{f.telefon || "—"}</td>}
-                      <td className="num">{o?.kayitSayisi ?? 0}</td>
+                      <td className="num">{gider ? o?.kayitSayisi ?? 0 : so?.siparisSayisi ?? 0}</td>
                       <td className="num">{gider ? <span className="font-medium">{formatTL(o?.harcama ?? 0)}</span> : <BakiyeHucre bakiye={o?.bakiye ?? 0} />}</td>
-                      <td className="tabular text-[var(--muted)]">{o?.sonTarih ? formatDate(o.sonTarih) : "—"}</td>
+                      <td className="tabular text-[var(--muted)]">
+                        {gider ? (o?.sonTarih ? formatDate(o.sonTarih) : "—") : so?.sonTarih ? formatDate(so.sonTarih) : "—"}
+                      </td>
                       <td>
                         <button className="icon-btn" onClick={() => setForm({ firma: f })} title="Düzenle">
                           <Pencil className="w-3.5 h-3.5" />
@@ -237,6 +245,7 @@ export default function FirmalarPage() {
           varsayilanTur={sekme}
           firmalar={firmalar}
           bagliKayitlar={form.firma ? tumKayitlar.filter((k) => k.firmaId === form.firma!.id) : []}
+          bagliSiparisIds={form.firma ? tumSiparisler.filter((s) => s.firmaId === form.firma!.id).map((s) => s.id) : []}
           onClose={() => setForm(null)}
         />
       )}
@@ -245,6 +254,7 @@ export default function FirmalarPage() {
         <BirlestirModal
           firmalar={seciliFirmalar as [Firma, Firma]}
           kayitlar={tumKayitlar}
+          siparisler={tumSiparisler}
           onClose={() => setBirlestir(false)}
           onDone={() => {
             setBirlestir(false);
@@ -422,12 +432,14 @@ function FirmaFormModal({
   varsayilanTur,
   firmalar,
   bagliKayitlar,
+  bagliSiparisIds,
   onClose,
 }: {
   firma?: Firma;
   varsayilanTur: FirmaTuru;
   firmalar: Firma[];
   bagliKayitlar: KasaKaydi[];
+  bagliSiparisIds: string[];
   onClose: () => void;
 }) {
   const [ad, setAd] = useState(firma?.ad ?? "");
@@ -451,7 +463,7 @@ function FirmaFormModal({
     }
     setBusy(true);
     try {
-      if (firma) await updateFirma(firma, { ad, tur, telefon, not }, firmalar, bagliKayitlar);
+      if (firma) await updateFirma(firma, { ad, tur, telefon, not }, firmalar, bagliKayitlar, bagliSiparisIds);
       else await addFirma(ad, firmalar, { tur, telefon, not });
       onClose();
     } catch (err) {
@@ -498,8 +510,10 @@ function FirmaFormModal({
             }}
             placeholder={tur === "gider" ? "Örn. Kira, Elektrik, Yakıt" : "Firma adı"}
           />
-          {firma && bagliKayitlar.length > 0 && firmaAdiDuzenle(ad) !== firma.ad && (
-            <p className="text-[11px] text-[var(--muted)] mt-1">Bağlı {bagliKayitlar.length} kayıttaki ad da güncellenecek.</p>
+          {firma && bagliKayitlar.length + bagliSiparisIds.length > 0 && firmaAdiDuzenle(ad) !== firma.ad && (
+            <p className="text-[11px] text-[var(--muted)] mt-1">
+              Bağlı {bagliKayitlar.length} kayıt ve {bagliSiparisIds.length} siparişteki ad da güncellenecek.
+            </p>
           )}
         </div>
         {tur !== "gider" && (
@@ -555,11 +569,13 @@ function FirmaFormModal({
 function BirlestirModal({
   firmalar,
   kayitlar,
+  siparisler,
   onClose,
   onDone,
 }: {
   firmalar: [Firma, Firma];
   kayitlar: KasaKaydi[];
+  siparisler: Siparis[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -567,7 +583,8 @@ function BirlestirModal({
   const [busy, setBusy] = useState(false);
   const hedef = firmalar.find((f) => f.id === hedefId)!;
   const kaynak = firmalar.find((f) => f.id !== hedefId)!;
-  const sayi = (id: string) => kayitlar.filter((k) => k.firmaId === id).length;
+  const sayi = (id: string) =>
+    kayitlar.filter((k) => k.firmaId === id).length + siparisler.filter((s) => s.firmaId === id).length;
 
   async function birlestir() {
     setBusy(true);
@@ -575,7 +592,8 @@ function BirlestirModal({
       await firmalariBirlestir(
         kaynak,
         hedef,
-        kayitlar.filter((k) => k.firmaId === kaynak.id).map((k) => k.id)
+        kayitlar.filter((k) => k.firmaId === kaynak.id).map((k) => k.id),
+        siparisler.filter((s) => s.firmaId === kaynak.id).map((s) => s.id)
       );
       onDone();
     } catch (err) {
@@ -607,7 +625,7 @@ function BirlestirModal({
           ))}
         </div>
         <div className="rounded-[10px] bg-[var(--brand-soft)] px-4 py-3 text-sm text-[var(--brand-dark)]">
-          <strong>{kaynak.ad}</strong> kaydının {sayi(kaynak.id)} hareketi <strong>{hedef.ad}</strong> altına aktarılacak ve{" "}
+          <strong>{kaynak.ad}</strong> altındaki {sayi(kaynak.id)} kayıt ve sipariş <strong>{hedef.ad}</strong> altına aktarılacak ve{" "}
           <strong>{kaynak.ad}</strong> silinecek. Bu işlem geri alınamaz.
         </div>
         <div className="flex gap-2 justify-end">

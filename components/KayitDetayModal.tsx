@@ -121,6 +121,7 @@ export default function KayitDetayModal({
             <p className="text-xs text-[var(--muted)] mt-0.5">
               Girildi: <span className="tabular">{girisZamani(kayit.createdAt)}</span>
               {kayit.kaynak === "veresiye" && " · Veresiye"}
+              {kayit.siparisId && " · Sipariş ödemesi"}
               {kayit.vadeTarihi && ` · Vade ${formatDate(kayit.vadeTarihi)}`}
             </p>
           </div>

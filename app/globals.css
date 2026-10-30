@@ -175,6 +175,39 @@ body {
     border-top-color: #f3f3f6;
   }
 
+  /* Siparişler: Firma and Tarih stay put while the wide table scrolls sideways. */
+  .siparis-tablo .sabit-1,
+  .siparis-tablo .sabit-2 {
+    position: sticky;
+    z-index: 1;
+    background: var(--surface);
+  }
+  .siparis-tablo .sabit-1 {
+    left: 0;
+    width: 220px;
+    min-width: 220px;
+  }
+  .siparis-tablo .sabit-2 {
+    left: 220px;
+    width: 140px;
+    min-width: 140px;
+    box-shadow: inset -1px 0 0 var(--border);
+  }
+  .siparis-tablo th.sabit-1,
+  .siparis-tablo th.sabit-2 {
+    z-index: 3;
+  }
+  .siparis-tablo th.sabit-2 {
+    box-shadow: inset -1px 0 0 var(--border), inset 0 -1px 0 var(--border);
+  }
+  .siparis-tablo tbody tr:hover .sabit-1,
+  .siparis-tablo tbody tr:hover .sabit-2 {
+    background: var(--surface-hover);
+  }
+  .siparis-tablo .taslak-satir td {
+    background: #fcfcfd;
+  }
+
   /* Inputs */
   .input-sm {
     background: transparent;

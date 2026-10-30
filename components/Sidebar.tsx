@@ -15,6 +15,7 @@ import {
   Lock,
   Trash2,
   Building2,
+  ClipboardList,
 } from "lucide-react";
 import { logout } from "@/lib/firebase";
 import Logo from "./Logo";
@@ -22,6 +23,7 @@ import InstallButton from "./InstallButton";
 
 const NAV = [
   { href: "/kasa", label: "Kasa", icon: Wallet },
+  { href: "/siparisler", label: "Siparişler", icon: ClipboardList },
   { href: "/firmalar", label: "Firmalar", icon: Building2 },
   { href: "/alacaklar", label: "Alacaklar", icon: ArrowDownToLine },
   { href: "/verecekler", label: "Borçlar", icon: ArrowUpFromLine },

@@ -8,7 +8,8 @@ import PageHeader from "@/components/PageHeader";
 import KayitDetayModal from "@/components/KayitDetayModal";
 import { hesapEtiketi } from "@/components/OdemeSekliSelect";
 import FirmaLink from "@/components/FirmaLink";
-import { kartOnerileri, useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari } from "@/lib/hooks";
+import { kartOnerileri, useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import { firmaSiparisOzetleri, siparisHesap, siparisOdemeleri } from "@/lib/siparis";
 import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
 import { tumHareketler, signed } from "@/lib/hareketler";
@@ -54,6 +55,7 @@ export default function KasaPage() {
   const { hesaplar } = useBankaHesaplari();
   const { firmalar } = useFirmalar();
   const { calisanlar } = useCalisanlar();
+  const { siparisler } = useSiparisler();
   const [drafts, setDrafts] = useState<DraftSlot[]>(() => Array.from({ length: DRAFT_COUNT }, () => newSlot()));
   const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit } | null>(null);
   const geriAlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,7 +66,9 @@ export default function KasaPage() {
   }, []);
 
   const oneriler = useMemo(() => kartOnerileri(kayitlar), [kayitlar]);
-  const ozetler = useMemo(() => cariOzetleri(kayitlar), [kayitlar]);
+  const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
+  const ozetler = useMemo(() => cariOzetleri(kayitlar, "firmaId", siparisler, odemeler), [kayitlar, siparisler, odemeler]);
+  const siparisOzetleri = useMemo(() => firmaSiparisOzetleri(siparisler, odemeler), [siparisler, odemeler]);
   const personelOzetleri = useMemo(() => cariOzetleri(kayitlar, "personelId"), [kayitlar]);
 
   // Customers and suppliers show their balance; expense items and staff only what was spent.
@@ -77,8 +81,13 @@ export default function KasaPage() {
     if (!firma) return undefined;
     const o = ozetler.get(firma.id);
     if (firmaTuru(firma) === "gider") return `Gider kalemi · toplam harcama ${formatTL(o?.harcama ?? 0)}`;
-    if (!o) return "Yeni cari · henüz hareket yok";
-    return `Bakiye ${bakiyeEtiketi(o.bakiye)} · ${o.kayitSayisi} kayıt`;
+    const so = siparisOzetleri.get(firma.id);
+    if (!o && !so) return "Yeni cari · henüz hareket yok";
+    return [
+      `Bakiye ${bakiyeEtiketi(o?.bakiye ?? 0)}`,
+      `${so?.acik ?? 0} açık sipariş`,
+      `${so?.teslimOdenmedi ?? 0} teslim edildi/ödenmedi`,
+    ].join(" · ");
   }
 
   const stats = useMemo(() => {
@@ -100,8 +109,10 @@ export default function KasaPage() {
       if (k.yon === "gelen") toplamAlacak += kalan;
       else toplamBorc += kalan;
     }
+    // Order remainders are owed to us too; their payments are already in the Kasa totals above.
+    for (const s of siparisler) toplamAlacak += siparisHesap(s, odemeler).kalan;
     return { nakit, banka, kartPos, toplam: nakit + banka + kartPos, toplamAlacak, toplamBorc };
-  }, [kayitlar]);
+  }, [kayitlar, siparisler, odemeler]);
 
   // Entered today (by save time, not the record's own date), newest first.
   const bugunGirilenler = useMemo(() => {
@@ -109,19 +120,22 @@ export default function KasaPage() {
     return kayitlar.filter((k) => isoDayOf(k.createdAt) === bugun).sort((a, b) => b.createdAt - a.createdAt);
   }, [kayitlar]);
 
-  const alacaklar = useMemo(
-    () =>
-      kayitlar
-        .filter((k) => k.yon === "gelen" && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
-        .sort((a, b) => (a.tarih < b.tarih ? 1 : -1))
-        .slice(0, 5),
-    [kayitlar]
-  );
+  const alacaklar = useMemo(() => {
+    const list: OnizlemeKalemi[] = kayitlar
+      .filter((k) => k.yon === "gelen" && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
+      .map(kalemOf);
+    for (const s of siparisler) {
+      const { kalan } = siparisHesap(s, odemeler);
+      if (kalan > 0) list.push({ id: s.id, tarih: s.tarih, firma: s.firmaAdi, firmaId: s.firmaId, aciklama: s.urun, kalan, siparis: true });
+    }
+    return list.sort((a, b) => (a.tarih < b.tarih ? 1 : -1)).slice(0, 5);
+  }, [kayitlar, siparisler, odemeler]);
 
   const borclar = useMemo(
     () =>
       kayitlar
         .filter((k) => k.yon === "giden" && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
+        .map(kalemOf)
         .sort((a, b) => (a.tarih < b.tarih ? 1 : -1))
         .slice(0, 5),
     [kayitlar]
@@ -370,6 +384,29 @@ function BugunGirilenler({
   );
 }
 
+interface OnizlemeKalemi {
+  id: string;
+  tarih: string;
+  firma: string;
+  firmaId?: string;
+  personelId?: string;
+  aciklama: string;
+  kalan: number;
+  siparis?: boolean;
+}
+
+function kalemOf(k: KasaKaydi): OnizlemeKalemi {
+  return {
+    id: k.id,
+    tarih: k.tarih,
+    firma: k.firma,
+    firmaId: k.firmaId,
+    personelId: k.personelId,
+    aciklama: k.aciklama,
+    kalan: k.toplamTutar - k.alinanTutar,
+  };
+}
+
 function PreviewList({
   title,
   href,
@@ -378,7 +415,7 @@ function PreviewList({
 }: {
   title: string;
   href: string;
-  items: KasaKaydi[];
+  items: OnizlemeKalemi[];
   tone: "orange" | "red";
 }) {
   return (
@@ -397,12 +434,15 @@ function PreviewList({
             <li key={k.id} className="py-2.5 flex items-center justify-between gap-4 text-sm">
               <div className="min-w-0">
                 <span className="block truncate"><FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" /></span>
-                <div className="text-xs text-[var(--muted)] truncate">{k.aciklama || "—"}</div>
+                <div className="text-xs text-[var(--muted)] truncate">
+                  {k.siparis && <span className="text-[var(--accent-blue)] font-medium">Sipariş · </span>}
+                  {k.aciklama || "—"}
+                </div>
               </div>
               <div
                 className={`num font-medium ${tone === "orange" ? "text-[var(--accent-orange)]" : "text-[var(--brand)]"}`}
               >
-                {formatTL(k.toplamTutar - k.alinanTutar)}
+                {formatTL(k.kalan)}
               </div>
             </li>
           ))}

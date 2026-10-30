@@ -19,6 +19,9 @@ export interface KasaKaydi {
   firma: string; // display name; for linked records the company name at the time of linking
   firmaId?: string; // link to firmalar; absent on older free-text records until matched
   personelId?: string; // set instead of firmaId when the counterparty is an employee (calisanlar)
+  // A payment taken with "Ödeme Al" on an order: toplamTutar = alinanTutar = the payment, so it
+  // never adds a debt of its own; the order carries the amount owed.
+  siparisId?: string;
   aciklama: string;
   toplamTutar: number;
   alinanTutar: number;
@@ -38,6 +41,55 @@ export interface KasaKaydi {
   silinmeTarihi?: number;
   createdAt: number;
   updatedAt: number;
+}
+
+export type UretimDurumu = "bekliyor" | "uretimde" | "bitti" | "teslim";
+export type GorselAlani = "siparis" | "biten";
+
+export interface TahsilatNotu {
+  tarih: string; // YYYY-MM-DD, e.g. the day the customer promised to pay
+  metin: string; // "pazartesi arayacak"
+  createdAt: number;
+}
+
+export interface Siparis {
+  id: string;
+  firmaId: string;
+  firmaAdi: string; // display name, kept in step with the company on rename/merge
+  tarih: string; // YYYY-MM-DD
+  urun: string; // Ürün / İş
+  tutar: number;
+  // Paid before the app existed (imported from Excel), with no Kasa record behind it. Everything
+  // paid since is a Kasa record with this siparisId; Ödenen = oncekiOdenen + those records.
+  oncekiOdenen?: number;
+  uretim: UretimDurumu;
+  fatura: boolean; // fatura kesildi
+  odemeGunu?: string; // YYYY-MM-DD, optional
+  aciklama: string;
+  siparisGorselleri: string[]; // gorseller ids
+  bitenGorselleri: string[];
+  tahsilatNotlari?: TahsilatNotu[];
+  // "Arşive Gönder" from Alacaklar: the remainder is written off, like a Kasa record's "arsiv".
+  kapatildi?: boolean;
+  kapanisTarihi?: number;
+  silindi?: boolean;
+  silinmeTarihi?: number;
+  kaynak?: "excel"; // imported in Aşama 4
+  excelSatir?: number; // source row, so a re-run of the import can skip what's already there
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Full image (≤1600 px WebP as a data URL). Its ~200 px preview lives in gorselOnizlemeleri under the
+// same id, so tables load previews without pulling the full images.
+export interface Gorsel {
+  id: string;
+  siparisId: string;
+  alan: GorselAlani;
+  veri: string;
+  genislik: number;
+  yukseklik: number;
+  createdAt: number;
 }
 
 export type FirmaTuru = "musteri" | "tedarikci" | "gider";

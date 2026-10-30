@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
   deleteDoc,
@@ -14,7 +15,7 @@ import {
 import { getDb, ensureSignedIn } from "./firebase";
 import { monthKeyOf, todayISO } from "./format";
 import { firmaAdiDuzenle, firmaAnahtari } from "./firma";
-import type { BankaHesabi, Calisan, Firma, FirmaTuru, KasaKaydi, Odeme } from "./types";
+import type { BankaHesabi, Calisan, Firma, FirmaTuru, GorselAlani, KasaKaydi, Odeme, Siparis, TahsilatNotu } from "./types";
 
 // Firestore rejects undefined values. A bank account only makes sense for havale,
 // and a card description ("Ziraat POS") only for kart.
@@ -34,12 +35,16 @@ const BANKALAR = "bankaHesaplari";
 const CALISANLAR = "calisanlar";
 const FIRMALAR = "firmalar";
 const FIRMA_ADLARI = "firmaAdlari";
+const SIPARISLER = "siparisler";
+const GORSELLER = "gorseller";
+const ONIZLEMELER = "gorselOnizlemeleri";
 
-export async function addKasaKaydi(input: {
+type KasaKaydiGirdisi = {
   tarih: string;
   firma: string;
   firmaId?: string;
   personelId?: string;
+  siparisId?: string;
   aciklama: string;
   toplamTutar: number;
   alinanTutar: number;
@@ -49,26 +54,31 @@ export async function addKasaKaydi(input: {
   yon: KasaKaydi["yon"];
   kaynak?: KasaKaydi["kaynak"];
   vadeTarihi?: string;
-}) {
-  await ensureSignedIn();
+};
+
+function kasaKaydiVerisi(input: KasaKaydiGirdisi) {
   const now = Date.now();
-  const { bankaHesapId, kartAciklama, kaynak, vadeTarihi, firmaId, personelId, ...rest } = input;
+  const { bankaHesapId, kartAciklama, kaynak, vadeTarihi, firmaId, personelId, siparisId, ...rest } = input;
   const durum: KasaKaydi["durum"] =
-    input.alinanTutar >= input.toplamTutar && input.toplamTutar > 0
-      ? "tamamlandi"
-      : "aktif";
-  return addDoc(collection(getDb(), KAYITLAR), {
+    input.alinanTutar >= input.toplamTutar && input.toplamTutar > 0 ? "tamamlandi" : "aktif";
+  return {
     ...rest,
     ...odemeAlanlari(rest.odemeSekli, bankaHesapId, kartAciklama),
     ...(firmaId ? { firmaId } : {}),
     ...(personelId ? { personelId } : {}),
+    ...(siparisId ? { siparisId } : {}),
     ...(kaynak ? { kaynak } : {}),
     ...(vadeTarihi ? { vadeTarihi } : {}),
     ay: monthKeyOf(input.tarih),
     durum,
     createdAt: now,
     updatedAt: now,
-  });
+  };
+}
+
+export async function addKasaKaydi(input: KasaKaydiGirdisi) {
+  await ensureSignedIn();
+  return addDoc(collection(getDb(), KAYITLAR), kasaKaydiVerisi(input));
 }
 
 export async function updateKasaKaydi(id: string, patch: Partial<KasaKaydi>) {
@@ -215,7 +225,8 @@ export async function updateFirma(
   firma: Firma,
   patch: { ad: string; tur: FirmaTuru; telefon: string; not: string },
   mevcut: Firma[],
-  bagliKayitlar: KasaKaydi[]
+  bagliKayitlar: KasaKaydi[],
+  bagliSiparisIds: string[] = []
 ) {
   await ensureSignedIn();
   const ad = firmaAdiDuzenle(patch.ad);
@@ -239,9 +250,10 @@ export async function updateFirma(
     });
   });
   if (ad !== firma.ad) {
-    await topluGuncelle(
-      bagliKayitlar.map((k) => ({ ref: doc(getDb(), KAYITLAR, k.id), data: { firma: ad, updatedAt: Date.now() } }))
-    );
+    await topluGuncelle([
+      ...bagliKayitlar.map((k) => ({ ref: doc(getDb(), KAYITLAR, k.id), data: { firma: ad, updatedAt: Date.now() } })),
+      ...bagliSiparisIds.map((id) => ({ ref: doc(getDb(), SIPARISLER, id), data: { firmaAdi: ad, updatedAt: Date.now() } })),
+    ]);
   }
 }
 
@@ -261,26 +273,164 @@ export async function kilitleriTamamla(firmalar: Firma[]) {
 }
 
 // Links free-text records (the "eşleştir" step) to a company.
-export async function kayitlariFirmayaBagla(kayitIds: string[], firma: Pick<Firma, "id" | "ad">) {
+export async function kayitlariFirmayaBagla(kayitIds: string[], firma: Pick<Firma, "id" | "ad">, siparisIds: string[] = []) {
   await ensureSignedIn();
-  await topluGuncelle(
-    kayitIds.map((id) => ({
+  await topluGuncelle([
+    ...kayitIds.map((id) => ({
       ref: doc(getDb(), KAYITLAR, id),
       data: { firmaId: firma.id, firma: firma.ad, updatedAt: Date.now() },
-    }))
-  );
+    })),
+    ...siparisIds.map((id) => ({
+      ref: doc(getDb(), SIPARISLER, id),
+      data: { firmaId: firma.id, firmaAdi: firma.ad, updatedAt: Date.now() },
+    })),
+  ]);
 }
 
 // Moves everything from kaynak to hedef, then removes kaynak and its name lock.
-export async function firmalariBirlestir(kaynak: Firma, hedef: Firma, kaynakKayitIds: string[]) {
+export async function firmalariBirlestir(kaynak: Firma, hedef: Firma, kaynakKayitIds: string[], kaynakSiparisIds: string[] = []) {
   await ensureSignedIn();
-  await kayitlariFirmayaBagla(kaynakKayitIds, hedef);
+  await kayitlariFirmayaBagla(kaynakKayitIds, hedef, kaynakSiparisIds);
   await runTransaction(getDb(), async (tx) => {
     const kilitRef = doc(getDb(), FIRMA_ADLARI, kaynak.anahtar);
     const kilit = await tx.get(kilitRef);
     if (kilit.exists() && kilit.data().firmaId === kaynak.id) tx.delete(kilitRef);
     tx.delete(doc(getDb(), FIRMALAR, kaynak.id));
   });
+}
+
+// ---- Siparişler ----
+
+export type OdemeGirdisi = {
+  tutar: number;
+  odemeSekli: KasaKaydi["odemeSekli"];
+  bankaHesapId?: string;
+  kartAciklama?: string;
+};
+
+// A payment on an order is a Kasa "Giriş" carrying siparisId and firmaId; the order's Ödenen is
+// computed from these records, so the money is counted once, in Kasa.
+function siparisOdemesiVerisi(s: Pick<Siparis, "id" | "firmaId" | "firmaAdi" | "urun">, odeme: OdemeGirdisi, tarih = todayISO()) {
+  return kasaKaydiVerisi({
+    tarih,
+    firma: s.firmaAdi,
+    firmaId: s.firmaId,
+    siparisId: s.id,
+    aciklama: `Sipariş · ${s.urun || "—"}`,
+    toplamTutar: odeme.tutar,
+    alinanTutar: odeme.tutar,
+    odemeSekli: odeme.odemeSekli,
+    bankaHesapId: odeme.bankaHesapId,
+    kartAciklama: odeme.kartAciklama,
+    yon: "gelen",
+  });
+}
+
+export async function addSiparis(
+  input: Pick<Siparis, "firmaId" | "firmaAdi" | "tarih" | "urun" | "tutar" | "aciklama"> & { odemeGunu?: string },
+  pesin?: OdemeGirdisi
+) {
+  await ensureSignedIn();
+  const ref = doc(collection(getDb(), SIPARISLER));
+  const now = Date.now();
+  const { odemeGunu, ...rest } = input;
+  const batch = writeBatch(getDb());
+  batch.set(ref, {
+    ...rest,
+    ...(odemeGunu ? { odemeGunu } : {}),
+    uretim: "bekliyor",
+    fatura: false,
+    siparisGorselleri: [],
+    bitenGorselleri: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+  if (pesin && pesin.tutar > 0) {
+    batch.set(doc(collection(getDb(), KAYITLAR)), siparisOdemesiVerisi({ id: ref.id, ...input }, pesin, input.tarih));
+  }
+  await batch.commit();
+  return ref;
+}
+
+export async function updateSiparis(id: string, patch: Partial<Omit<Siparis, "id">>) {
+  await ensureSignedIn();
+  const next: Record<string, unknown> = { ...patch, updatedAt: Date.now() };
+  if ("odemeGunu" in patch && !patch.odemeGunu) next.odemeGunu = deleteField();
+  return updateDoc(doc(getDb(), SIPARISLER, id), next);
+}
+
+export async function siparisOdemeAl(s: Siparis, odeme: OdemeGirdisi) {
+  await ensureSignedIn();
+  return addDoc(collection(getDb(), KAYITLAR), siparisOdemesiVerisi(s, odeme));
+}
+
+// "Arşive Gönder" from Alacaklar: the remainder is written off and leaves every open total.
+export async function siparisKapat(id: string) {
+  await ensureSignedIn();
+  const now = Date.now();
+  return updateDoc(doc(getDb(), SIPARISLER, id), { kapatildi: true, kapanisTarihi: now, updatedAt: now });
+}
+
+// Soft delete; the order's payments go to Çöp Kutusu with it (same silinmeTarihi), so the company
+// balance doesn't show money received for an order that no longer exists.
+export async function siparisSil(id: string, odemeKayitIds: string[]) {
+  await ensureSignedIn();
+  const now = Date.now();
+  await topluGuncelle([
+    { ref: doc(getDb(), SIPARISLER, id), data: { silindi: true, silinmeTarihi: now } },
+    ...odemeKayitIds.map((k) => ({ ref: doc(getDb(), KAYITLAR, k), data: { silindi: true, silinmeTarihi: now } })),
+  ]);
+}
+
+export async function siparisGeriYukle(id: string, odemeKayitIds: string[]) {
+  await ensureSignedIn();
+  const geri = { silindi: deleteField(), silinmeTarihi: deleteField(), updatedAt: Date.now() };
+  await topluGuncelle([
+    { ref: doc(getDb(), SIPARISLER, id), data: geri },
+    ...odemeKayitIds.map((k) => ({ ref: doc(getDb(), KAYITLAR, k), data: geri })),
+  ]);
+}
+
+export async function tahsilatNotuEkle(siparisId: string, not: Omit<TahsilatNotu, "createdAt">) {
+  await ensureSignedIn();
+  const kalem: TahsilatNotu = { ...not, metin: not.metin.trim(), createdAt: Date.now() };
+  return updateDoc(doc(getDb(), SIPARISLER, siparisId), { tahsilatNotlari: arrayUnion(kalem), updatedAt: Date.now() });
+}
+
+export async function tahsilatNotuSil(siparisId: string, not: TahsilatNotu) {
+  await ensureSignedIn();
+  return updateDoc(doc(getDb(), SIPARISLER, siparisId), { tahsilatNotlari: arrayRemove(not), updatedAt: Date.now() });
+}
+
+const GORSEL_ALANI: Record<GorselAlani, "siparisGorselleri" | "bitenGorselleri"> = {
+  siparis: "siparisGorselleri",
+  biten: "bitenGorselleri",
+};
+
+// The full image and its preview are separate documents under one id; the order lists the id.
+export async function gorselEkle(
+  siparisId: string,
+  alan: GorselAlani,
+  g: { veri: string; onizleme: string; genislik: number; yukseklik: number }
+) {
+  await ensureSignedIn();
+  const ref = doc(collection(getDb(), GORSELLER));
+  const now = Date.now();
+  const batch = writeBatch(getDb());
+  batch.set(ref, { siparisId, alan, veri: g.veri, genislik: g.genislik, yukseklik: g.yukseklik, createdAt: now });
+  batch.set(doc(getDb(), ONIZLEMELER, ref.id), { siparisId, onizleme: g.onizleme, createdAt: now });
+  batch.update(doc(getDb(), SIPARISLER, siparisId), { [GORSEL_ALANI[alan]]: arrayUnion(ref.id), updatedAt: now });
+  await batch.commit();
+  return ref.id;
+}
+
+export async function gorselSil(siparisId: string, alan: GorselAlani, gorselId: string) {
+  await ensureSignedIn();
+  const batch = writeBatch(getDb());
+  batch.delete(doc(getDb(), GORSELLER, gorselId));
+  batch.delete(doc(getDb(), ONIZLEMELER, gorselId));
+  batch.update(doc(getDb(), SIPARISLER, siparisId), { [GORSEL_ALANI[alan]]: arrayRemove(gorselId), updatedAt: Date.now() });
+  await batch.commit();
 }
 
 export async function addBankaHesabi(input: Omit<BankaHesabi, "id">) {
@@ -313,4 +463,4 @@ export async function deleteCalisan(id: string) {
   return deleteDoc(doc(getDb(), CALISANLAR, id));
 }
 
-export { KAYITLAR, BANKALAR, CALISANLAR, FIRMALAR, FIRMA_ADLARI };
+export { KAYITLAR, BANKALAR, CALISANLAR, FIRMALAR, FIRMA_ADLARI, SIPARISLER, GORSELLER, ONIZLEMELER };

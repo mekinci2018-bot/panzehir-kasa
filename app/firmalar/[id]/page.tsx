@@ -5,7 +5,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import { ArrowLeft, FileText, Printer } from "lucide-react";
-import { useBankaHesaplari, useFirmalar, useKasaKayitlari, kartOnerileri } from "@/lib/hooks";
+import { useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler, kartOnerileri } from "@/lib/hooks";
+import { siparisOdemeleri } from "@/lib/siparis";
+import SiparisDetayModal from "@/components/SiparisDetayModal";
 import { ekstreOlustur, FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
 import { ODEME_SEKLI_LABEL, bakiyeEtiketi, formatDate, formatTL, longDateTR } from "@/lib/format";
 import EmptyState from "@/components/EmptyState";
@@ -17,25 +19,38 @@ export default function CariEkstrePage() {
   const { firmalar, loading: firmaLoading } = useFirmalar();
   const { kayitlar, loading } = useKasaKayitlari();
   const { hesaplar } = useBankaHesaplari();
+  const { siparisler } = useSiparisler();
   const [detayId, setDetayId] = useState<string | null>(null);
+  const [siparisDetayId, setSiparisDetayId] = useState<string | null>(null);
 
   const firma = firmalar.find((f) => f.id === id);
   const firmaKayitlari = useMemo(() => kayitlar.filter((k) => k.firmaId === id), [kayitlar, id]);
-  const satirlar = useMemo(() => ekstreOlustur(firmaKayitlari), [firmaKayitlari]);
+  const firmaSiparisleri = useMemo(() => siparisler.filter((s) => s.firmaId === id), [siparisler, id]);
+  const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
+  const satirlar = useMemo(
+    () => ekstreOlustur(firmaKayitlari, firmaSiparisleri, odemeler),
+    [firmaKayitlari, firmaSiparisleri, odemeler]
+  );
 
+  // Ciro: sales and orders. Order payments are Kasa records too, so they count as collections only.
   const toplamlar = useMemo(() => {
     let ciro = 0;
     let tahsilat = 0;
     for (const k of firmaKayitlari) {
       if (k.yon !== "gelen") continue;
-      ciro += k.toplamTutar;
+      if (!k.siparisId) ciro += k.toplamTutar;
       tahsilat += k.alinanTutar;
+    }
+    for (const s of firmaSiparisleri) {
+      ciro += s.tutar;
+      tahsilat += s.oncekiOdenen ?? 0;
     }
     const bakiye = satirlar.length ? satirlar[satirlar.length - 1].bakiye : 0;
     return { ciro, tahsilat, bakiye };
-  }, [firmaKayitlari, satirlar]);
+  }, [firmaKayitlari, firmaSiparisleri, satirlar]);
 
   const detay = detayId ? kayitlar.find((k) => k.id === detayId) : undefined;
+  const siparisDetay = siparisDetayId ? siparisler.find((s) => s.id === siparisDetayId) : undefined;
   const gider = firma ? firmaTuru(firma) === "gider" : false;
 
   // Expense items have no cari: just what was spent, newest first.
@@ -153,7 +168,7 @@ export default function CariEkstrePage() {
 
       <div className="card overflow-hidden">
         {!loading && satirlar.length === 0 ? (
-          <EmptyState icon={FileText} title="Henüz hareket yok" description="Bu firmaya bağlı kasa kaydı olduğunda burada tarih sırasıyla listelenir." />
+          <EmptyState icon={FileText} title="Henüz hareket yok" description="Bu firmaya bağlı sipariş ya da kasa kaydı olduğunda burada tarih sırasıyla listelenir." />
         ) : (
           <div className="table-scroll print:max-h-none print:overflow-visible">
             <table className="w-full text-sm data-table">
@@ -168,7 +183,7 @@ export default function CariEkstrePage() {
               </thead>
               <tbody>
                 {satirlar.map((s) => (
-                  <tr key={s.key} className="cursor-pointer print:cursor-auto" onClick={() => setDetayId(s.kayitId)}>
+                  <tr key={s.key} className="cursor-pointer print:cursor-auto" onClick={() => (s.siparis ? setSiparisDetayId(s.kayitId) : setDetayId(s.kayitId))}>
                     <td className="tabular">{formatDate(s.tarih)}</td>
                     <td>{s.aciklama}</td>
                     <td className="num">{s.borc ? formatTL(s.borc) : ""}</td>
@@ -188,6 +203,18 @@ export default function CariEkstrePage() {
         Bakiye &ldquo;Alacak&rdquo; ise firma bize borçlu, &ldquo;Borç&rdquo; ise biz firmaya borçluyuz.
       </p>
       </>
+      )}
+
+      {siparisDetay && (
+        <SiparisDetayModal
+          key={siparisDetay.id}
+          siparis={siparisDetay}
+          odemeKayitlari={kayitlar.filter((k) => k.siparisId === siparisDetay.id)}
+          odemeler={odemeler}
+          hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri(kayitlar)}
+          onClose={() => setSiparisDetayId(null)}
+        />
       )}
 
       {detay && (

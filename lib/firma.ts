@@ -1,6 +1,7 @@
 import { ODEME_SEKLI_LABEL, isoDayOf } from "./format";
 import { hareketlerOf } from "./hareketler";
-import type { Firma, FirmaTuru, KasaKaydi } from "./types";
+import { siparisHesap } from "./siparis";
+import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "./types";
 
 export const FIRMA_TURU_LABEL: Record<FirmaTuru, string> = {
   musteri: "Müşteri",
@@ -76,7 +77,8 @@ export interface EkstreSatiri {
   key: string;
   tarih: string;
   aciklama: string;
-  kayitId: string;
+  kayitId: string; // a Kasa record, or an order when siparis is set
+  siparis?: boolean;
   borc: number; // company is debited: our sale, or our payment to them
   alacak: number; // company is credited: their payment, or our purchase from them
   bakiye: number;
@@ -86,13 +88,50 @@ function odemeDetayi(odemeSekli: KasaKaydi["odemeSekli"], kartAciklama?: string)
   return [ODEME_SEKLI_LABEL[odemeSekli], kartAciklama].filter(Boolean).join(" · ");
 }
 
-// Statement in date order: each record's amount, then the money that moved against it.
-export function ekstreOlustur(kayitlar: KasaKaydi[]): EkstreSatiri[] {
+// What an order adds to a company's balance: its open remainder (or overpayment), nothing once written off.
+export function siparisBakiyesi(s: Siparis, odemeler: Map<string, number>): number {
+  return s.kapatildi ? 0 : siparisHesap(s, odemeler).acikKalan;
+}
+
+// Statement in date order: each record's or order's amount, then the money that moved against it.
+// Order payments are Kasa records with siparisId; they only add their payment rows.
+export function ekstreOlustur(
+  kayitlar: KasaKaydi[],
+  siparisler: Siparis[] = [],
+  odemeler: Map<string, number> = new Map()
+): EkstreSatiri[] {
   const satirlar: Omit<EkstreSatiri, "bakiye">[] = [];
+  for (const s of [...siparisler].sort((a, b) => a.createdAt - b.createdAt)) {
+    const ad = s.urun || "Sipariş";
+    satirlar.push({ key: `${s.id}-s`, tarih: s.tarih, aciklama: `Sipariş · ${ad}`, kayitId: s.id, siparis: true, borc: s.tutar, alacak: 0 });
+    if (s.oncekiOdenen) {
+      satirlar.push({
+        key: `${s.id}-o`,
+        tarih: s.tarih,
+        aciklama: `Önceki ödeme · ${ad}`,
+        kayitId: s.id,
+        siparis: true,
+        borc: 0,
+        alacak: s.oncekiOdenen,
+      });
+    }
+    const acik = siparisHesap(s, odemeler).acikKalan;
+    if (s.kapatildi && acik > 0.005) {
+      satirlar.push({
+        key: `${s.id}-k`,
+        tarih: isoDayOf(s.kapanisTarihi ?? s.updatedAt),
+        aciklama: `Kapatıldı (tahsil edilemedi) · ${ad}`,
+        kayitId: s.id,
+        siparis: true,
+        borc: 0,
+        alacak: acik,
+      });
+    }
+  }
   const sirali = [...kayitlar].sort((a, b) => a.createdAt - b.createdAt);
   for (const k of sirali) {
     const baslik = k.aciklama || (k.yon === "gelen" ? "Satış" : "Alış");
-    if (k.toplamTutar) {
+    if (k.toplamTutar && !k.siparisId) {
       satirlar.push({
         key: `${k.id}-t`,
         tarih: k.tarih,
@@ -106,7 +145,9 @@ export function ekstreOlustur(kayitlar: KasaKaydi[]): EkstreSatiri[] {
       satirlar.push({
         key: `${k.id}-h${i}`,
         tarih: h.tarih,
-        aciklama: `${k.yon === "gelen" ? "Tahsilat" : "Ödeme"} · ${odemeDetayi(h.odemeSekli, h.kartAciklama)}`,
+        aciklama: [k.yon === "gelen" ? "Tahsilat" : "Ödeme", odemeDetayi(h.odemeSekli, h.kartAciklama), k.siparisId ? k.aciklama : ""]
+          .filter(Boolean)
+          .join(" · "),
         kayitId: k.id,
         borc: k.yon === "gelen" ? 0 : h.tutar,
         alacak: k.yon === "gelen" ? h.tutar : 0,
@@ -141,9 +182,22 @@ export interface CariOzet {
   sonTarih: string;
 }
 
-// Per company (firmaId) or per employee (personelId).
-export function cariOzetleri(kayitlar: KasaKaydi[], alan: "firmaId" | "personelId" = "firmaId"): Map<string, CariOzet> {
+// Per company (firmaId) or per employee (personelId). Orders count toward a company's balance.
+export function cariOzetleri(
+  kayitlar: KasaKaydi[],
+  alan: "firmaId" | "personelId" = "firmaId",
+  siparisler: Siparis[] = [],
+  odemeler: Map<string, number> = new Map()
+): Map<string, CariOzet> {
   const map = new Map<string, CariOzet>();
+  if (alan === "firmaId") {
+    for (const s of siparisler) {
+      const o = map.get(s.firmaId) ?? { bakiye: 0, harcama: 0, kayitSayisi: 0, sonTarih: "" };
+      o.bakiye += siparisBakiyesi(s, odemeler);
+      if (s.tarih > o.sonTarih) o.sonTarih = s.tarih;
+      map.set(s.firmaId, o);
+    }
+  }
   for (const k of kayitlar) {
     const id = k[alan];
     if (!id) continue;
