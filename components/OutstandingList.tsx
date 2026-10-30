@@ -9,6 +9,7 @@ import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
 import { currentMonthKey, daysSince, formatDate, formatTL, monthLabel, vadeDurumu, type VadeDurumu } from "@/lib/format";
 import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
 import MonthNav from "./MonthNav";
+import { YazdirButonu, YazdirmaBasligi } from "./Yazdir";
 import type { KasaKaydi, Siparis, Yon } from "@/lib/types";
 import AmountModal from "./AmountModal";
 import VeresiyeModal from "./VeresiyeModal";
@@ -132,10 +133,13 @@ export default function OutstandingList({
 
   return (
     <div className="page-enter flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <YazdirmaBasligi baslik={title} donem={monthLabel(ay)} filtreler={["Önceki aylardan devreden açık kalemler dahil"]} />
+
+      <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
         <PageHeader title={title} description={subtitle} />
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <MonthNav monthKey={ay} onChange={setAy} />
+          <YazdirButonu dosyaAdi={`${title} - ${monthLabel(ay)}`} />
           <button className="btn-primary inline-flex items-center gap-2" onClick={() => setAdding(true)}>
             <Plus className="w-4 h-4" /> {newLabel}
           </button>
@@ -143,7 +147,7 @@ export default function OutstandingList({
       </div>
 
       {gorunen.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--muted)] px-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--muted)] px-1 print:px-0 print:text-[11px]">
           <span>
             {monthLabel(ay)}: <b className="tabular text-[var(--foreground)]">{formatTL(toplamlar.buAy)}</b>
           </span>
@@ -158,7 +162,9 @@ export default function OutstandingList({
         </div>
       )}
 
-      <div className="card overflow-hidden">
+      <YazdirmaListesi kalemler={gorunen} ay={ay} tutarBasligi={amountLabel} />
+
+      <div className="card overflow-hidden print:hidden">
         {loading && items.length === 0 ? (
           <YukleniyorSatiri />
         ) : items.length === 0 ? (
@@ -291,5 +297,67 @@ export default function OutstandingList({
         />
       )}
     </div>
+  );
+}
+
+// Print view: grouped by company with subtotals and a grand total; carried-over items are marked.
+function YazdirmaListesi({ kalemler, ay, tutarBasligi }: { kalemler: AcikKalem[]; ay: string; tutarBasligi: string }) {
+  const gruplar = new Map<string, { ad: string; kalemler: AcikKalem[] }>();
+  for (const k of kalemler) {
+    const anahtar = k.firmaId ?? (k.personelId ? `p-${k.personelId}` : `ad-${k.firma}`);
+    const g = gruplar.get(anahtar) ?? { ad: k.firma, kalemler: [] };
+    g.kalemler.push(k);
+    gruplar.set(anahtar, g);
+  }
+  const sirali = [...gruplar.values()].sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
+  const genelToplam = kalemler.reduce((t, k) => t + k.kalan, 0);
+
+  if (kalemler.length === 0) {
+    return <p className="hidden print:block text-[11px] text-[var(--muted)] mt-4">Bu dönemde açık kalem yok.</p>;
+  }
+
+  return (
+    <table className="yazdir-tablo hidden print:table mt-2">
+      <thead>
+        <tr>
+          <th className="w-[70px]">Tarih</th>
+          <th>Açıklama</th>
+          <th className="w-[70px]">Vade</th>
+          <th className="sag w-[100px]">{tutarBasligi}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sirali.map((g) => {
+          const araToplam = g.kalemler.reduce((t, k) => t + k.kalan, 0);
+          return [
+            <tr key={`${g.ad}-b`} className="grup-basi">
+              <td colSpan={4}>{g.ad}</td>
+            </tr>,
+            ...[...g.kalemler]
+              .sort((a, b) => (a.tarih < b.tarih ? -1 : 1))
+              .map((k) => (
+                <tr key={k.key}>
+                  <td className="tabular">{formatDate(k.tarih)}</td>
+                  <td>
+                    {k.aciklama || "—"}
+                    {k.siparis && <span className="yazdir-isaret">Sipariş</span>}
+                    {!aydaMi(k.tarih, ay) && <span className="yazdir-isaret">Devreden · {kisaAyEtiketi(k.tarih, ay)}</span>}
+                  </td>
+                  <td className="tabular">{k.vade ? formatDate(k.vade) : "—"}</td>
+                  <td className="sag">{formatTL(k.kalan)}</td>
+                </tr>
+              )),
+            <tr key={`${g.ad}-t`} className="ara-toplam">
+              <td colSpan={3}>Ara toplam · {g.kalemler.length} kalem</td>
+              <td className="sag">{formatTL(araToplam)}</td>
+            </tr>,
+          ];
+        })}
+        <tr className="genel-toplam">
+          <td colSpan={3}>Genel toplam · {sirali.length} firma, {kalemler.length} kalem</td>
+          <td className="sag">{formatTL(genelToplam)}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }

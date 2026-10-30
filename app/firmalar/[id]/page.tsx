@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileText, Printer } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
+import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 import { useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler, kartOnerileri } from "@/lib/hooks";
 import { siparisOdemeleri } from "@/lib/siparis";
 import SiparisDetayModal from "@/components/SiparisDetayModal";
 import { ekstreOlustur, FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
-import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatDate, formatTL, longDateTR, shiftMonthKey, todayISO } from "@/lib/format";
+import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatDate, formatTL, shiftMonthKey, todayISO } from "@/lib/format";
 import { hareketlerOf } from "@/lib/hareketler";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
@@ -98,14 +98,6 @@ export default function CariEkstrePage() {
     .sort((a, b) => (a.tarih === b.tarih ? b.createdAt - a.createdAt : a.tarih < b.tarih ? 1 : -1));
   const toplamHarcama = harcamalar.reduce((s, k) => s + (k.yon === "giden" ? k.toplamTutar : -k.toplamTutar), 0);
 
-  // The PDF file name comes from the document title.
-  function yazdir() {
-    const eski = document.title;
-    document.title = `${gider ? "Harcama Dökümü" : "Cari Ekstre"} - ${firma?.ad ?? ""}`;
-    window.print();
-    document.title = eski;
-  }
-
   if (!firma) {
     return (
       <div className="card">
@@ -120,16 +112,14 @@ export default function CariEkstrePage() {
 
   return (
     <div className="page-enter flex flex-col gap-6 print:gap-4">
-      <div className="hidden print:flex items-center justify-between border-b border-[var(--border)] pb-3">
-        <Image src="/logo.png" alt="Panzehir Reklam" width={581} height={130} className="w-[140px] h-auto" />
-        <div className="text-right text-xs text-[var(--muted)]">
-          <div className="font-semibold text-[var(--foreground)] text-sm">{gider ? "Harcama Dökümü" : "Cari Hesap Ekstresi"}</div>
-          <div>Dönem: {aralikMetni}</div>
-          {longDateTR()}
-        </div>
-      </div>
+      <YazdirmaBasligi
+        baslik={gider ? "Harcama Dökümü" : "Cari Hesap Ekstresi"}
+        altBaslik={firma.ad}
+        donem={aralikMetni}
+        filtreler={[FIRMA_TURU_LABEL[firmaTuru(firma)], firma.telefon ? `Tel: ${firma.telefon}` : ""].filter(Boolean)}
+      />
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
         <div className="flex flex-col gap-1.5">
           <Link
             href="/firmalar"
@@ -142,9 +132,7 @@ export default function CariEkstrePage() {
             {[FIRMA_TURU_LABEL[firmaTuru(firma)], firma.telefon, firma.not].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <button className="btn-secondary inline-flex items-center gap-2 print:hidden" onClick={yazdir} title="Yazdır ya da 'PDF olarak kaydet' seçin">
-          <Printer className="w-4 h-4" /> Yazdır / PDF
-        </button>
+        <YazdirButonu dosyaAdi={`${gider ? "Harcama Dökümü" : "Cari Ekstre"} - ${firma.ad}`} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 print:hidden">
@@ -278,7 +266,7 @@ export default function CariEkstrePage() {
           </div>
         )}
       </div>
-      <p className="text-[11px] text-[var(--muted-soft)] -mt-3">
+      <p className="text-[11px] text-[var(--muted-soft)] -mt-3 print:mt-0">
         Borç: firmanın borçlandığı tutar (satış ya da firmaya yaptığımız ödeme). Alacak: firmanın ödediği ya da bizden alacaklandığı tutar.
         Bakiye &ldquo;Alacak&rdquo; ise firma bize borçlu, &ldquo;Borç&rdquo; ise biz firmaya borçluyuz.
       </p>

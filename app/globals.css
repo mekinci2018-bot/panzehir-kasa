@@ -408,8 +408,21 @@ body {
 }
 
 @media print {
+  /* "Sayfa X / Y" at the foot of every page (works when the browser's own headers/footers are off). */
   @page {
-    margin: 14mm;
+    margin: 14mm 12mm 16mm;
+    @bottom-center {
+      content: "Sayfa " counter(page) " / " counter(pages);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8.5pt;
+      color: #6e6e7a;
+    }
+  }
+  /* Keep badge and header colors instead of letting the printer drop backgrounds. */
+  html,
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   body {
     background: #fff;
@@ -420,6 +433,74 @@ body {
   .page-enter {
     animation: none;
   }
+  .table-scroll {
+    max-height: none;
+    overflow: visible;
+  }
+  .data-table th {
+    position: static;
+  }
+}
+
+/* Print-only tables (Alacaklar/Borçlar, Arşiv): compact, grouped, with subtotals. */
+.yazdir-tablo {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+.yazdir-tablo thead {
+  display: table-header-group; /* repeats on every printed page */
+}
+.yazdir-tablo th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 5px 6px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.yazdir-tablo td {
+  padding: 4px 6px;
+  border-bottom: 1px solid #e6e6ec;
+  vertical-align: top;
+}
+.yazdir-tablo tr {
+  break-inside: avoid;
+}
+.yazdir-tablo .sag {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.yazdir-tablo .grup-basi td {
+  padding-top: 10px;
+  font-weight: 600;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border-strong);
+  break-after: avoid;
+}
+.yazdir-tablo .ara-toplam td {
+  font-weight: 600;
+  background: #f4f4f7;
+}
+.yazdir-tablo .genel-toplam td {
+  font-weight: 700;
+  font-size: 11.5px;
+  border-top: 2px solid var(--ink);
+  border-bottom: none;
+  padding-top: 7px;
+}
+.yazdir-isaret {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 600;
+  background: #eef0f7;
+  color: var(--ink);
+  margin-left: 4px;
 }
 
 ::-webkit-scrollbar {

@@ -14,6 +14,7 @@ import KayitDetayModal from "@/components/KayitDetayModal";
 import FirmaLink from "@/components/FirmaLink";
 import MonthNav from "@/components/MonthNav";
 import AyKasaOzeti from "@/components/AyKasaOzeti";
+import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 
 type Sekme = "tumu" | "gelen" | "giden" | "harcama" | "tedarikci" | "personel";
 
@@ -145,29 +146,44 @@ export default function ArsivPage() {
   const detay = detayId ? kayitlar.find((k) => k.id === detayId) : undefined;
   const enBuyuk = kalemler[0]?.tutar ?? 0;
 
+  // What the screen is filtered by, written on the printout.
+  const donemMetni = aramaAnahtari ? "Tüm aylar (arama)" : monthLabel(ay);
+  const filtreMetinleri = [
+    `Sekme: ${SEKMELER.find((s) => s.id === sekme)!.label}`,
+    `Ödeme: ${cipler.length ? cipler.map((c) => ODEME_SEKLI_LABEL[c]).join(", ") : "Tümü"}`,
+    ...(kalem ? [`Kalem: ${firmaMap.get(kalem)?.ad ?? "—"}`] : []),
+    ...(aramaAnahtari ? [`Arama: “${arama.trim()}”`] : []),
+  ];
+  const dosyaAdi = `Arşiv - ${donemMetni} - ${SEKMELER.find((s) => s.id === sekme)!.label}`;
+
   return (
     <div className="page-enter flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <YazdirmaBasligi baslik="Arşiv" donem={donemMetni} filtreler={filtreMetinleri} />
+
+      <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
         <PageHeader title="Arşiv" description="Kasa'dan kaydedilen tüm kayıtlar, ay ay. Düzenlemek ya da silmek için kayda tıklayın." />
-        <div className={aramaAnahtari ? "opacity-40" : ""} title={aramaAnahtari ? "Arama tüm aylarda yapılıyor" : undefined}>
-          <MonthNav
-            monthKey={ay}
-            onChange={(m) => {
-              setAy(m);
-              setKalem(null);
-            }}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className={aramaAnahtari ? "opacity-40" : ""} title={aramaAnahtari ? "Arama tüm aylarda yapılıyor" : undefined}>
+            <MonthNav
+              monthKey={ay}
+              onChange={(m) => {
+                setAy(m);
+                setKalem(null);
+              }}
+            />
+          </div>
+          <YazdirButonu dosyaAdi={dosyaAdi} />
         </div>
       </div>
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-hidden print:hidden">
         <div className="px-5 pt-3 pb-1 text-[11px] font-medium uppercase tracking-wider text-[var(--muted)]">{monthLabel(ay)} kasa durumu</div>
         <div className="pb-2">
           <AyKasaOzeti ay={ay} donem={ayDonemi} />
         </div>
       </div>
 
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-2.5 print:hidden">
         <div className="flex flex-wrap items-center gap-1.5">
           {SEKMELER.map(({ id, label }) => {
             const aktif = sekme === id;
@@ -218,7 +234,7 @@ export default function ArsivPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--muted)] px-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[var(--muted)] px-1 print:px-0 print:text-[12px] print:py-2 print:border-b print:border-[var(--border)]">
         <span>
           Gelen <b className="tabular text-[var(--accent-green)]">{formatTL(ozet.gelen)}</b>
         </span>
@@ -237,7 +253,7 @@ export default function ArsivPage() {
       </div>
 
       {sekme === "harcama" && kalemler.length > 0 && (
-        <div className="card p-4 flex flex-col gap-1">
+        <div className="card p-4 flex flex-col gap-1 print:hidden">
           {kalemler.map((h) => {
             const secili = kalem === h.id;
             return (
@@ -260,7 +276,30 @@ export default function ArsivPage() {
         </div>
       )}
 
-      <div className="card overflow-hidden">
+      {sekme === "harcama" && kalemler.length > 0 && !kalem && (
+        <table className="yazdir-tablo hidden print:table">
+          <thead>
+            <tr>
+              <th>Gider kalemi</th>
+              <th className="sag w-[110px]">Tutar</th>
+              <th className="sag w-[60px]">Oran</th>
+            </tr>
+          </thead>
+          <tbody>
+            {kalemler.map((h) => (
+              <tr key={h.id}>
+                <td>{h.ad}</td>
+                <td className="sag">{formatTL(h.tutar)}</td>
+                <td className="sag">%{ozet.harcama ? Math.round((h.tutar / ozet.harcama) * 100) : 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <ArsivYazdirmaListesi kayitlar={gorunen} />
+
+      <div className="card overflow-hidden print:hidden">
         {loading && kayitlar.length === 0 ? (
           <YukleniyorSatiri />
         ) : gorunen.length === 0 ? (
@@ -329,4 +368,48 @@ function DurumBadge({ durum }: { durum: KasaKaydi["durum"] }) {
   } as const;
   const v = map[durum];
   return <span className={`badge ${v.cls}`}>{v.label}</span>;
+}
+
+// Print view: the listed records with separate in/out columns and a total row (Net = Giriş − Çıkış).
+function ArsivYazdirmaListesi({ kayitlar }: { kayitlar: KasaKaydi[] }) {
+  if (kayitlar.length === 0) {
+    return <p className="hidden print:block text-[11px] text-[var(--muted)] mt-4">Bu filtrelere uyan kayıt yok.</p>;
+  }
+  const giris = kayitlar.filter((k) => k.yon === "gelen").reduce((t, k) => t + k.toplamTutar, 0);
+  const cikis = kayitlar.filter((k) => k.yon === "giden").reduce((t, k) => t + k.toplamTutar, 0);
+  return (
+    <table className="yazdir-tablo hidden print:table mt-2">
+      <thead>
+        <tr>
+          <th className="w-[70px]">Tarih</th>
+          <th>Firma / Açıklama</th>
+          <th className="w-[110px]">Ödeme</th>
+          <th className="sag w-[95px]">Giriş</th>
+          <th className="sag w-[95px]">Çıkış</th>
+        </tr>
+      </thead>
+      <tbody>
+        {kayitlar.map((k) => (
+          <tr key={k.id}>
+            <td className="tabular">{formatDate(k.tarih)}</td>
+            <td>
+              <b className="font-semibold">{k.firma}</b>
+              {k.aciklama ? ` · ${k.aciklama}` : ""}
+              {k.durum === "aktif" && <span className="yazdir-isaret">Açık</span>}
+            </td>
+            <td>{[ODEME_SEKLI_LABEL[k.odemeSekli], k.kartAciklama].filter(Boolean).join(" · ")}</td>
+            <td className="sag">{k.yon === "gelen" ? formatTL(k.toplamTutar) : ""}</td>
+            <td className="sag">{k.yon === "giden" ? formatTL(k.toplamTutar) : ""}</td>
+          </tr>
+        ))}
+        <tr className="genel-toplam">
+          <td colSpan={3}>
+            Toplam · {kayitlar.length} kayıt · Net {formatTL(giris - cikis)}
+          </td>
+          <td className="sag">{formatTL(giris)}</td>
+          <td className="sag">{formatTL(cikis)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
 }
