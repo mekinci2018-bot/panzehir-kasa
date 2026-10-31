@@ -208,6 +208,18 @@ body {
     background: #fcfcfd;
   }
 
+  /* Siparişler: a thick, dark, always-visible horizontal scrollbar, repeated above the table. */
+  .siparis-tablo,
+  .kaydirma-ust {
+    scrollbar-width: auto;
+    scrollbar-color: #55556a #e4e4ea;
+  }
+  .kaydirma-ust {
+    overflow-x: scroll;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--border);
+  }
+
   /* Group headers inside a table: "Önceki aylardan devreden", the month name. */
   .data-table tbody tr.grup-satir td {
     padding: 0;
@@ -440,6 +452,19 @@ body {
   .data-table th {
     position: static;
   }
+  /* Wide print-outs (Siparişler) go on landscape pages. */
+  .yazdir-yatay {
+    page: yatay;
+  }
+  /* Sipariş Formu: only the form is printed, the page and the open window behind it are not. */
+  body.form-yazdiriliyor > *:not(.siparis-formu) {
+    display: none !important;
+  }
+}
+
+@page yatay {
+  size: A4 landscape;
+  margin: 10mm 10mm 14mm;
 }
 
 /* Print-only tables (Alacaklar/Borçlar, Arşiv): compact, grouped, with subtotals. */

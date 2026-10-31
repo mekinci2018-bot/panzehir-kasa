@@ -12,8 +12,18 @@ import FirmaLink from "@/components/FirmaLink";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
+import { SiraCubugu } from "@/components/SiraBasligi";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 const empty = { banka: "", hesapSahibi: "", iban: "", aciklama: "" };
+
+// Amounts sort signed: money out counts as negative, like the "−" shown in the lists.
+const HAREKET_SUTUNLARI: SiraSutunlari<Hareket> = {
+  tarih: (h) => h.tarih,
+  firma: (h) => h.firma,
+  aciklama: (h) => h.aciklama,
+  tutar: (h) => signed(h),
+};
 const SON_HAREKET = 3;
 const BELIRTILMEMIS = "Belirtilmemiş";
 
@@ -24,6 +34,7 @@ export default function BankaBilgileriPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [adding, setAdding] = useState(false);
+  const { sira, sirala: siraDegistir } = useSiralama("banka.hareketler");
 
   // Havale movements grouped by account, newest first. Those with no (or an unknown) account
   // go to "Hesap seçilmemiş", so all cards together add up to the Banka total on Kasa.
@@ -40,11 +51,11 @@ export default function BankaBilgileriPage() {
       if (!map.has(h.bankaHesapId)) map.set(h.bankaHesapId, []);
       map.get(h.bankaHesapId)!.push(h);
     }
+    // Newest first unless a column is chosen above the cards.
     const yeniden = (a: Hareket, b: Hareket) => (a.tarih < b.tarih ? 1 : -1);
-    for (const list of map.values()) list.sort(yeniden);
-    secilmemis.sort(yeniden);
-    return { hareketMap: map, secilmemis };
-  }, [kayitlar, hesaplar]);
+    for (const [id, list] of map) map.set(id, sirala(list.sort(yeniden), sira, HAREKET_SUTUNLARI));
+    return { hareketMap: map, secilmemis: sirala(secilmemis.sort(yeniden), sira, HAREKET_SUTUNLARI) };
+  }, [kayitlar, hesaplar, sira]);
 
   // Card movements grouped by where they were charged ("Ziraat POS"), largest first.
   const kartGruplari = useMemo(() => {
@@ -114,6 +125,15 @@ export default function BankaBilgileriPage() {
             description="'Yeni Hesap' ile ilk hesabını ekle. Kasa'da 'Banka Havalesi' seçtiğinde bu hesaplar listelenir."
           />
         </div>
+      )}
+
+      {hareketMap.size + secilmemis.length > 0 && (
+        <SiraCubugu
+          className="-mb-2 px-1"
+          sutunlar={[["tarih", "Tarih"], ["firma", "Firma"], ["aciklama", "Açıklama"], ["tutar", "Tutar"]]}
+          sira={sira}
+          onSirala={siraDegistir}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">

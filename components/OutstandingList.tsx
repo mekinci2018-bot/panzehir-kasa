@@ -18,6 +18,8 @@ import EmptyState from "./EmptyState";
 import YukleniyorSatiri from "./YukleniyorSatiri";
 import FirmaLink from "./FirmaLink";
 import { SiparisOdemeModal } from "./SiparisDetayModal";
+import { SiraTh } from "./SiraBasligi";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 // One open amount: a Kasa record's unpaid part, or an order's remainder (customers only).
 interface AcikKalem {
@@ -34,6 +36,14 @@ interface AcikKalem {
 }
 
 const OVERDUE_DAYS = 30;
+
+const KALEM_SUTUNLARI: SiraSutunlari<AcikKalem> = {
+  tarih: (k) => k.tarih,
+  firma: (k) => k.firma,
+  aciklama: (k) => k.aciklama,
+  vade: (k) => k.vade,
+  tutar: (k) => k.kalan,
+};
 
 const VADE_RENK: Record<VadeDurumu, string> = {
   gecti: "text-[var(--accent-red)]",
@@ -114,7 +124,11 @@ export default function OutstandingList({
 
   // The selected month's open amounts, plus those carried over from earlier months. Fully closed
   // records are not here at all, so they stay in their own month (Arşiv).
-  const gorunen = useMemo(() => items.filter((k) => aydaMi(k.tarih, ay) || aydanOnceMi(k.tarih, ay)), [items, ay]);
+  const { sira, sirala: siraDegistir } = useSiralama(yon === "gelen" ? "alacaklar" : "borclar");
+  const gorunen = useMemo(
+    () => sirala(items.filter((k) => aydaMi(k.tarih, ay) || aydanOnceMi(k.tarih, ay)), sira, KALEM_SUTUNLARI),
+    [items, ay, sira]
+  );
   const toplamlar = useMemo(() => {
     let buAy = 0;
     let devreden = 0;
@@ -162,7 +176,7 @@ export default function OutstandingList({
         </div>
       )}
 
-      <YazdirmaListesi kalemler={gorunen} ay={ay} tutarBasligi={amountLabel} />
+      <YazdirmaListesi kalemler={gorunen} ay={ay} tutarBasligi={amountLabel} ekranSirasi={!!sira} />
 
       <div className="card overflow-hidden print:hidden">
         {loading && items.length === 0 ? (
@@ -176,11 +190,11 @@ export default function OutstandingList({
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>
-                  <th className="w-[110px]">Tarih</th>
-                  <th>Firma / Kişi</th>
-                  <th>Açıklama</th>
-                  <th className="w-[150px]">Vade</th>
-                  <th className="w-[150px] text-right">{amountLabel}</th>
+                  <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="w-[110px]">Tarih</SiraTh>
+                  <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir}>Firma / Kişi</SiraTh>
+                  <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir}>Açıklama</SiraTh>
+                  <SiraTh sutun="vade" sira={sira} onSirala={siraDegistir} className="w-[150px]">Vade</SiraTh>
+                  <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[150px] text-right">{amountLabel}</SiraTh>
                   <th className="w-[230px]"></th>
                 </tr>
               </thead>
@@ -301,7 +315,19 @@ export default function OutstandingList({
 }
 
 // Print view: grouped by company with subtotals and a grand total; carried-over items are marked.
-function YazdirmaListesi({ kalemler, ay, tutarBasligi }: { kalemler: AcikKalem[]; ay: string; tutarBasligi: string }) {
+// With a column sort on screen, companies and their items follow the screen order; otherwise
+// companies are alphabetical and items by date.
+function YazdirmaListesi({
+  kalemler,
+  ay,
+  tutarBasligi,
+  ekranSirasi,
+}: {
+  kalemler: AcikKalem[];
+  ay: string;
+  tutarBasligi: string;
+  ekranSirasi: boolean;
+}) {
   const gruplar = new Map<string, { ad: string; kalemler: AcikKalem[] }>();
   for (const k of kalemler) {
     const anahtar = k.firmaId ?? (k.personelId ? `p-${k.personelId}` : `ad-${k.firma}`);
@@ -309,7 +335,7 @@ function YazdirmaListesi({ kalemler, ay, tutarBasligi }: { kalemler: AcikKalem[]
     g.kalemler.push(k);
     gruplar.set(anahtar, g);
   }
-  const sirali = [...gruplar.values()].sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
+  const sirali = ekranSirasi ? [...gruplar.values()] : [...gruplar.values()].sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
   const genelToplam = kalemler.reduce((t, k) => t + k.kalan, 0);
 
   if (kalemler.length === 0) {
@@ -333,9 +359,7 @@ function YazdirmaListesi({ kalemler, ay, tutarBasligi }: { kalemler: AcikKalem[]
             <tr key={`${g.ad}-b`} className="grup-basi">
               <td colSpan={4}>{g.ad}</td>
             </tr>,
-            ...[...g.kalemler]
-              .sort((a, b) => (a.tarih < b.tarih ? -1 : 1))
-              .map((k) => (
+            ...(ekranSirasi ? g.kalemler : [...g.kalemler].sort((a, b) => (a.tarih < b.tarih ? -1 : 1))).map((k) => (
                 <tr key={k.key}>
                   <td className="tabular">{formatDate(k.tarih)}</td>
                   <td>

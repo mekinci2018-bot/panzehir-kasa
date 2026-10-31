@@ -1,9 +1,10 @@
-// Full Firestore backup (images and sub-collections included) to import/yedek-ONCESI-YYYY-AA-GG.json,
-// in the app's backup format (lib/yedekBicimi.ts) so Ayarlar can restore it. Sub-collections are
-// keyed by their path ("firmalar/abc/notlar"), which db.collection() accepts on restore.
+// Full Firestore backup (images and sub-collections included) to import/yedek-<ETIKET>-YYYY-AA-GG.json
+// (ETIKET defaults to ONCESI), in the app's backup format (lib/yedekBicimi.ts) so Ayarlar can restore
+// it. Sub-collections are keyed by their path ("firmalar/abc/notlar"), which db.collection() accepts
+// on restore. An existing file is never overwritten: the time is added to the name instead.
 //
-//   FIREBASE_SERVICE_ACCOUNT_DOSYASI=<service account key .json> node scripts/yedek-al.mjs
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+//   FIREBASE_SERVICE_ACCOUNT_DOSYASI=<service account key .json> node scripts/yedek-al.mjs [ETIKET]
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { cert, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
@@ -35,7 +36,9 @@ for (const ref of await db.listCollections()) await koleksiyonOku(ref);
 const tarih = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(new Date());
 const veri = { uygulama: "panzehir-kasa", surum: 1, olusturma: new Date().toISOString(), gorsellerDahil: true, koleksiyonlar };
 mkdirSync("import", { recursive: true });
-const yol = `import/yedek-ONCESI-${tarih}.json`;
+const etiket = process.argv[2] ?? "ONCESI";
+const saat = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date()).replace(/:/g, "");
+const yol = existsSync(`import/yedek-${etiket}-${tarih}.json`) ? `import/yedek-${etiket}-${tarih}-${saat}.json` : `import/yedek-${etiket}-${tarih}.json`;
 const json = JSON.stringify(veri);
 writeFileSync(yol, json);
 

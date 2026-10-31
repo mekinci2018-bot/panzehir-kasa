@@ -8,6 +8,8 @@ import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
+import { SiraTh } from "@/components/SiraBasligi";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 const SAKLAMA_GUN = 30;
 const GUN_MS = 24 * 60 * 60 * 1000;
@@ -24,6 +26,16 @@ interface CopKalemi {
   silinmeTarihi: number;
   geriYukle: () => Promise<unknown>;
 }
+
+// İşlem: Giriş → Çıkış → Sipariş.
+const COP_SUTUNLARI: SiraSutunlari<CopKalemi> = {
+  tarih: (k) => k.tarih,
+  firma: (k) => k.firma,
+  islem: (k) => (k.siparis ? 2 : k.yon === "gelen" ? 0 : 1),
+  odeme: (k) => k.odeme,
+  toplam: (k) => k.tutar,
+  silinme: (k) => k.silinmeTarihi,
+};
 
 export default function CopKutusuPage() {
   const { silinenler: silinenKayitlar, loading } = useKasaKayitlari();
@@ -70,6 +82,8 @@ export default function CopKutusuPage() {
     ];
     return kalemler.filter((k) => k.silinmeTarihi >= sinir).sort((a, b) => b.silinmeTarihi - a.silinmeTarihi);
   }, [silinenKayitlar, silinenSiparisler, simdi]);
+  const { sira, sirala: siraDegistir } = useSiralama("cop-kutusu");
+  const sirali = useMemo(() => sirala(items, sira, COP_SUTUNLARI), [items, sira]);
 
   return (
     <div className="page-enter flex flex-col gap-6">
@@ -88,17 +102,17 @@ export default function CopKutusuPage() {
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>
-                  <th className="w-[110px]">Tarih</th>
-                  <th>Firma / Açıklama</th>
-                  <th className="w-[90px]">İşlem</th>
-                  <th className="w-[150px]">Ödeme</th>
-                  <th className="w-[130px] text-right">Toplam</th>
-                  <th className="w-[130px]">Silinme</th>
+                  <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="w-[110px]">Tarih</SiraTh>
+                  <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir}>Firma / Açıklama</SiraTh>
+                  <SiraTh sutun="islem" sira={sira} onSirala={siraDegistir} className="w-[90px]">İşlem</SiraTh>
+                  <SiraTh sutun="odeme" sira={sira} onSirala={siraDegistir} className="w-[150px]">Ödeme</SiraTh>
+                  <SiraTh sutun="toplam" sira={sira} onSirala={siraDegistir} className="w-[130px] text-right">Toplam</SiraTh>
+                  <SiraTh sutun="silinme" sira={sira} onSirala={siraDegistir} className="w-[130px]">Silinme</SiraTh>
                   <th className="w-[120px]"></th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((k) => {
+                {sirali.map((k) => {
                   const kalanGun = Math.max(0, SAKLAMA_GUN - Math.floor((simdi - k.silinmeTarihi) / GUN_MS));
                   return (
                     <tr key={k.id}>

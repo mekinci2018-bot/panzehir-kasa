@@ -20,6 +20,8 @@ import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 import BakiyeHucre from "@/components/BakiyeHucre";
+import { SiraTh } from "@/components/SiraBasligi";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 const SEKMELER: { tur: FirmaTuru; label: string }[] = [
   { tur: "musteri", label: "Müşteriler" },
@@ -67,15 +69,29 @@ export default function FirmalarPage() {
     return s;
   }, [firmalar]);
 
+  const { sira, sirala: siraDegistir } = useSiralama("firmalar");
   const liste = useMemo(() => {
     const k = firmaAnahtari(arama);
     const t = arama.replace(/\D/g, "");
-    return firmalar.filter(
-      (f) =>
-        firmaTuru(f) === sekme &&
-        (!k || f.anahtar.includes(k) || (t.length >= 3 && !!f.telefon?.replace(/\D/g, "").includes(t)))
+    const giderMi = sekme === "gider";
+    // The count, amount and date columns show different figures for expense items.
+    const sutunlar: SiraSutunlari<Firma> = {
+      ad: (f) => f.ad,
+      telefon: (f) => f.telefon,
+      adet: (f) => (giderMi ? ozetler.get(f.id)?.kayitSayisi ?? 0 : siparisOzetleri.get(f.id)?.siparisSayisi ?? 0),
+      tutar: (f) => (giderMi ? ozetler.get(f.id)?.harcama ?? 0 : ozetler.get(f.id)?.bakiye ?? 0),
+      son: (f) => (giderMi ? ozetler.get(f.id)?.sonTarih : siparisOzetleri.get(f.id)?.sonTarih),
+    };
+    return sirala(
+      firmalar.filter(
+        (f) =>
+          firmaTuru(f) === sekme &&
+          (!k || f.anahtar.includes(k) || (t.length >= 3 && !!f.telefon?.replace(/\D/g, "").includes(t)))
+      ),
+      sira,
+      sutunlar
     );
-  }, [firmalar, arama, sekme]);
+  }, [firmalar, arama, sekme, sira, ozetler, siparisOzetleri]);
 
   const eslesmeyenler = useMemo(() => {
     const map = new Map<string, { kayitIds: string[]; adlar: Map<string, number>; gelenVar: boolean }>();
@@ -186,11 +202,11 @@ export default function FirmalarPage() {
               <thead>
                 <tr>
                   <th className="w-[44px]"></th>
-                  <th>{gider ? "Gider Kalemi" : "Firma"}</th>
-                  {!gider && <th className="w-[150px]">Telefon</th>}
-                  <th className="w-[90px] text-right">{gider ? "Kayıt" : "Sipariş"}</th>
-                  <th className="w-[170px] text-right">{gider ? "Toplam Harcama" : "Bakiye"}</th>
-                  <th className="w-[120px]">{gider ? "Son işlem" : "Son sipariş"}</th>
+                  <SiraTh sutun="ad" sira={sira} onSirala={siraDegistir}>{gider ? "Gider Kalemi" : "Firma"}</SiraTh>
+                  {!gider && <SiraTh sutun="telefon" sira={sira} onSirala={siraDegistir} className="w-[150px]">Telefon</SiraTh>}
+                  <SiraTh sutun="adet" sira={sira} onSirala={siraDegistir} className="w-[90px] text-right">{gider ? "Kayıt" : "Sipariş"}</SiraTh>
+                  <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[170px] text-right">{gider ? "Toplam Harcama" : "Bakiye"}</SiraTh>
+                  <SiraTh sutun="son" sira={sira} onSirala={siraDegistir} className="w-[120px]">{gider ? "Son işlem" : "Son sipariş"}</SiraTh>
                   <th className="w-[52px]"></th>
                 </tr>
               </thead>

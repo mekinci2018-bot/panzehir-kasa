@@ -11,12 +11,17 @@ import GorselHucre from "@/components/GorselHucre";
 import OdemeSekliSelect, { type OdemeSecimi } from "@/components/OdemeSekliSelect";
 import SiparisDetayModal, { SiparisOdemeModal, UYARI_RENK } from "@/components/SiparisDetayModal";
 import { FaturaRozeti, OdemeRozeti, UretimRozeti } from "@/components/Rozetler";
+import { SiraTh } from "@/components/SiraBasligi";
+import CiftKaydirma from "@/components/CiftKaydirma";
+import { SiparisYazdirButonu, SiparisYazdirmaListesi, type YazdirmaBolumu } from "@/components/SiparisYazdir";
 import { kartOnerileri, onizlemeGetir, useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { addSiparis, gorselEkle, updateSiparis } from "@/lib/db";
 import { gorselHazirla } from "@/lib/gorsel";
 import { firmaAnahtari, firmaTuru } from "@/lib/firma";
 import {
+  ODEME_SIRASI,
   SEKME_LABEL,
+  URETIM_SIRASI,
   devrederMi,
   odemeDurumu,
   sekmedeMi,
@@ -26,7 +31,8 @@ import {
   type SiparisHesap,
   type SiparisSekmesi,
 } from "@/lib/siparis";
-import { currentMonthKey, formatDate, formatTL, monthLabel, todayISO } from "@/lib/format";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
+import { currentMonthKey, formatDate, formatTL, monthLabel, todayISO, tutarOku } from "@/lib/format";
 import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
 import type { BankaHesabi, Firma, GorselAlani, Siparis } from "@/lib/types";
 
@@ -81,6 +87,34 @@ function devredenAcikOku(): boolean {
 
 type Hesapli = { s: Siparis; h: SiparisHesap };
 
+const SUTUNLAR: SiraSutunlari<Hesapli> = {
+  firma: ({ s }) => s.firmaAdi,
+  tarih: ({ s }) => s.tarih,
+  urun: ({ s }) => s.urun,
+  tutar: ({ s }) => s.tutar,
+  odenen: ({ h }) => h.odenen,
+  kalan: ({ h }) => h.kalan,
+  uretim: ({ s }) => URETIM_SIRASI.indexOf(s.uretim),
+  odeme: ({ s, h }) => ODEME_SIRASI.indexOf(odemeDurumu(s, h)),
+  fatura: ({ s }) => (s.fatura ? 1 : 0),
+  odemeGunu: ({ s }) => s.odemeGunu,
+  aciklama: ({ s }) => s.aciklama,
+};
+
+const SIRA_ETIKETI: Record<string, string> = {
+  firma: "Firma",
+  tarih: "Tarih",
+  urun: "Ürün / İş",
+  tutar: "Tutar",
+  odenen: "Ödenen",
+  kalan: "Kalan",
+  uretim: "Üretim",
+  odeme: "Ödeme",
+  fatura: "Fatura",
+  odemeGunu: "Ödeme Günü",
+  aciklama: "Açıklama",
+};
+
 // Typing "N" opens a new order, unless the user is typing somewhere or a window is open.
 function yazmaAlanindaMi(el: EventTarget | null): boolean {
   const t = el as HTMLElement | null;
@@ -103,6 +137,8 @@ export default function SiparislerPage() {
   const [mobilYeni, setMobilYeni] = useState(false);
   const [bildirim, setBildirim] = useState<string | null>(null);
   const bildirimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { sira, sirala: siraDegistir } = useSiralama("siparisler");
+  const [yazdirmaGorselleri, setYazdirmaGorselleri] = useState<Map<string, string>>(() => new Map());
 
   // The chosen tab and the carried-over section's open state are remembered on this device.
   useEffect(() => {
@@ -155,7 +191,7 @@ export default function SiparislerPage() {
 
   const hesapli = useMemo<Hesapli[]>(() => siparisler.map((s) => ({ s, h: siparisHesap(s, odemeler) })), [siparisler, odemeler]);
 
-  // The selected month, plus earlier orders not yet both paid and delivered. A search looks in every month.
+  // The selected month, plus earlier orders still in production. A search looks in every month.
   const aramaAnahtari = firmaAnahtari(arama);
   const { ayin, devreden } = useMemo(() => {
     if (aramaAnahtari) {
@@ -166,7 +202,7 @@ export default function SiparislerPage() {
     }
     return {
       ayin: hesapli.filter(({ s }) => aydaMi(s.tarih, ay)),
-      devreden: hesapli.filter(({ s, h }) => aydanOnceMi(s.tarih, ay) && devrederMi(s, h)),
+      devreden: hesapli.filter(({ s }) => aydanOnceMi(s.tarih, ay) && devrederMi(s)),
     };
   }, [hesapli, ay, aramaAnahtari]);
 
@@ -196,7 +232,8 @@ export default function SiparislerPage() {
     return { uretimde, bitti, teslimOdenmedi, teslimOdenmediTutar, alacak };
   }, [kapsam]);
 
-  const sekmedeki = (list: Hesapli[]) => list.filter(({ s, h }) => sekmedeMi(sekme, s, h));
+  // Both sections are sorted on their own, by the column chosen in the header.
+  const sekmedeki = (list: Hesapli[]) => sirala(list.filter(({ s, h }) => sekmedeMi(sekme, s, h)), sira, SUTUNLAR);
   const devredenSekmede = sekmedeki(devreden);
   const devredenKalan = devredenSekmede.reduce((t, { h }) => t + h.kalan, 0);
   const ayinSekmede = sekmedeki(ayin);
@@ -210,6 +247,18 @@ export default function SiparislerPage() {
     : sekme === "tumu"
       ? `${monthLabel(ay)} için henüz sipariş yok.`
       : "Bu sekmede şu an sipariş yok.";
+
+  // The print-out follows the screen: carried-over orders only when that section is open.
+  const ayBasligi = aramaAnahtari ? "Arama sonuçları" : monthLabel(ay);
+  const yazdirmaBolumleri: YazdirmaBolumu[] = [
+    ...(devredenAcik && devredenSekmede.length ? [{ baslik: "Önceki aylardan devreden", satirlar: devredenSekmede }] : []),
+    { baslik: ayBasligi, satirlar: ayinSekmede },
+  ];
+  const yazdirmaFiltreleri = [
+    `Sekme: ${SEKME_LABEL[sekme]}`,
+    ...(aramaAnahtari ? [`Arama: “${arama.trim()}” (tüm aylar)`] : []),
+    ...(sira ? [`Sıralama: ${SIRA_ETIKETI[sira.sutun] ?? sira.sutun} ${sira.yon === "artan" ? "▲" : "▼"}`] : []),
+  ];
 
   const detay = detayId ? siparisler.find((s) => s.id === detayId) : undefined;
   const odemeSiparis = odemeId ? hesapli.find(({ s }) => s.id === odemeId) : undefined;
@@ -271,15 +320,18 @@ export default function SiparislerPage() {
 
   return (
     <div className="page-enter flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <SiparisYazdirmaListesi bolumler={yazdirmaBolumleri} donem={ayBasligi} filtreler={yazdirmaFiltreleri} gorseller={yazdirmaGorselleri} />
+
+      <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
         <PageHeader
           title="Siparişler"
-          description="Görsel hücresine tıklayıp Ctrl+V ile yapıştırabilirsiniz. Ödenmemiş ya da teslim edilmemiş işler sonraki aylara devreder."
+          description="Görsel hücresine tıklayıp Ctrl+V ile yapıştırabilirsiniz. Üretimdeki işler sonraki aylara devreder; ödenmemiş tutarlar Alacaklar'da takip edilir."
         />
         <div className="flex items-center gap-3">
           <div className={aramaAnahtari ? "opacity-40" : ""} title={aramaAnahtari ? "Arama tüm aylarda yapılıyor" : undefined}>
             <MonthNav monthKey={ay} onChange={(m) => { setAy(m); setLimit(SAYFA); }} />
           </div>
+          <SiparisYazdirButonu bolumler={yazdirmaBolumleri} dosyaAdi={`Siparişler - ${ayBasligi} - ${SEKME_LABEL[sekme]}`} onGorseller={setYazdirmaGorselleri} />
           <button className="btn-primary inline-flex items-center gap-2" onClick={yeniAc} title="Yeni sipariş (N)">
             <Plus className="w-4 h-4" /> Yeni Sipariş
             <kbd className="hidden md:inline text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/15">N</kbd>
@@ -287,7 +339,7 @@ export default function SiparislerPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px] text-[var(--muted)]">
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[13px] text-[var(--muted)] print:hidden">
         <OzetOgesi onClick={() => setSekme("uretimde")}>
           Üretimde: <b className="text-[var(--foreground)] tabular">{ozet.uretimde}</b>
         </OzetOgesi>
@@ -303,12 +355,12 @@ export default function SiparislerPage() {
           </b>
         </OzetOgesi>
         <span className="text-[var(--border-strong)]">·</span>
-        <OzetOgesi onClick={() => setSekme("odemeBekleyen")}>
-          Toplam alacak: <b className="text-[var(--foreground)] tabular">{formatTL(ozet.alacak)}</b>
+        <OzetOgesi onClick={() => setSekme("odemeBekleyen")} title="Bu ayın ve devreden işlerin kalanı; tüm açık alacaklar Alacaklar sayfasında">
+          Alacak: <b className="text-[var(--foreground)] tabular">{formatTL(ozet.alacak)}</b>
         </OzetOgesi>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 print:hidden">
         {SEKMELER.map((t) => {
           const aktif = sekme === t;
           const ozel = t === "teslimOdenmedi";
@@ -333,7 +385,7 @@ export default function SiparislerPage() {
         })}
       </div>
 
-      <div className="relative max-w-md">
+      <div className="relative max-w-md print:hidden">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-soft)]" />
         <input
           className="input-field !pl-9"
@@ -347,24 +399,24 @@ export default function SiparislerPage() {
       </div>
 
       {/* Desktop: spreadsheet-style table */}
-      <div className="card overflow-hidden hidden md:block">
-        <div className="table-scroll siparis-tablo">
-          <table className="text-sm data-table min-w-[1780px] w-full">
+      <div className="card overflow-hidden hidden md:block print:!hidden">
+        <CiftKaydirma className="table-scroll siparis-tablo">
+          <table className="text-sm data-table min-w-[2060px] w-full">
             <thead>
               <tr>
-                <th className="sabit-1">Firma</th>
-                <th className="sabit-2">Tarih</th>
-                <th className="w-[200px]">Ürün / İş</th>
-                <th className="w-[130px]">Sipariş Görseli</th>
-                <th className="w-[120px] text-right">Tutar</th>
-                <th className="w-[150px] text-right">Ödenen</th>
-                <th className="w-[120px] text-right">Kalan</th>
-                <th className="w-[130px]">Üretim</th>
-                <th className="w-[100px]">Ödeme</th>
-                <th className="w-[130px]">Biten Ürün Görseli</th>
-                <th className="w-[100px]">Fatura</th>
-                <th className="w-[140px]">Ödeme Günü</th>
-                <th className="w-[220px]">Açıklama</th>
+                <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir} className="sabit-1">Firma</SiraTh>
+                <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="sabit-2">Tarih</SiraTh>
+                <SiraTh sutun="urun" sira={sira} onSirala={siraDegistir} className="w-[320px]">Ürün / İş</SiraTh>
+                <th className="w-[190px]">Sipariş Görseli</th>
+                <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[140px] text-right">Tutar</SiraTh>
+                <SiraTh sutun="odenen" sira={sira} onSirala={siraDegistir} className="w-[140px] text-right">Ödenen</SiraTh>
+                <SiraTh sutun="kalan" sira={sira} onSirala={siraDegistir} className="w-[130px] text-right">Kalan</SiraTh>
+                <SiraTh sutun="uretim" sira={sira} onSirala={siraDegistir} className="w-[130px]">Üretim</SiraTh>
+                <SiraTh sutun="odeme" sira={sira} onSirala={siraDegistir} className="w-[100px]">Ödeme</SiraTh>
+                <th className="w-[190px]">Biten Ürün Görseli</th>
+                <SiraTh sutun="fatura" sira={sira} onSirala={siraDegistir} className="w-[100px]">Fatura</SiraTh>
+                <SiraTh sutun="odemeGunu" sira={sira} onSirala={siraDegistir} className="w-[140px]">Ödeme Günü</SiraTh>
+                <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir} className="w-[220px]">Açıklama</SiraTh>
                 <th className="w-[130px]"></th>
               </tr>
             </thead>
@@ -405,14 +457,14 @@ export default function SiparislerPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </CiftKaydirma>
         {loading && siparisler.length === 0 && <YukleniyorSatiri />}
         {bos && <div className="px-5 py-8 text-sm text-center text-[var(--muted)] border-t border-[var(--border)]">{bosMetni}</div>}
         {kalanSayi > 0 && <DahaFazla kalan={kalanSayi} onClick={() => setLimit((l) => l + SAYFA)} />}
       </div>
 
       {/* Phone: cards */}
-      <div className="md:hidden flex flex-col gap-2.5">
+      <div className="md:hidden flex flex-col gap-2.5 print:!hidden">
         {loading && siparisler.length === 0 && (
           <div className="card">
             <YukleniyorSatiri />
@@ -486,9 +538,10 @@ function DahaFazla({ kalan, onClick }: { kalan: number; onClick: () => void }) {
   );
 }
 
-function OzetOgesi({ children, onClick, vurgulu }: { children: React.ReactNode; onClick: () => void; vurgulu?: boolean }) {
+function OzetOgesi({ children, onClick, vurgulu, title }: { children: React.ReactNode; onClick: () => void; vurgulu?: boolean; title?: string }) {
   return (
     <button
+      title={title}
       className={`px-2 py-1 rounded-lg transition-colors ${
         vurgulu ? "text-[var(--brand-dark)] bg-[var(--brand-soft)] hover:bg-[#fbe3e3]" : "hover:bg-[var(--surface)] hover:text-[var(--foreground)]"
       }`}
@@ -525,6 +578,72 @@ function HucreInput({
       onChange={(e) => setTaslak(e.target.value)}
       onBlur={() => {
         if (!iptal.current && taslak !== null && taslak !== value) onCommit(taslak);
+        iptal.current = false;
+        setTaslak(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          iptal.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+// Like HucreInput, but wraps onto more lines so a long product name is shown in full.
+// Enter saves; Shift+Enter starts a new line.
+function HucreMetin({ value, onCommit, placeholder }: { value: string; onCommit: (v: string) => void; placeholder?: string }) {
+  const [taslak, setTaslak] = useState<string | null>(null);
+  const iptal = useRef(false);
+  return (
+    <textarea
+      rows={1}
+      className="input-sm resize-none [field-sizing:content] leading-snug"
+      placeholder={placeholder}
+      value={taslak ?? value}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setTaslak(e.target.value)}
+      onBlur={() => {
+        if (!iptal.current && taslak !== null && taslak !== value) onCommit(taslak);
+        iptal.current = false;
+        setTaslak(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          iptal.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+// Shows the amount as "₺17.900,00"; on focus it turns into the plain number for typing.
+function TutarHucre({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [taslak, setTaslak] = useState<string | null>(null);
+  const iptal = useRef(false);
+  return (
+    <input
+      inputMode="decimal"
+      className="input-sm num"
+      value={taslak ?? formatTL(value)}
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => {
+        setTaslak(value ? String(value).replace(".", ",") : "");
+        requestAnimationFrame(() => e.target.select());
+      }}
+      onChange={(e) => setTaslak(e.target.value)}
+      onBlur={() => {
+        if (!iptal.current && taslak !== null) {
+          const yeni = tutarOku(taslak);
+          if (yeni !== value) onCommit(yeni);
+        }
         iptal.current = false;
         setTaslak(null);
       }}
@@ -590,13 +709,13 @@ function SiparisSatir({
         <HucreInput type="date" value={s.tarih} onCommit={(v) => v && updateSiparis(s.id, { tarih: v })} />
       </td>
       <td className="align-top">
-        <HucreInput value={s.urun} placeholder="Ürün / iş" onCommit={(v) => updateSiparis(s.id, { urun: v.trim() })} />
+        <HucreMetin value={s.urun} placeholder="Ürün / iş" onCommit={(v) => updateSiparis(s.id, { urun: v.trim() })} />
       </td>
       <td className="align-top">
         <GorselHucre ids={s.siparisGorselleri} alan="siparis" siparisId={s.id} />
       </td>
       <td className="align-top">
-        <HucreInput type="number" className="num" value={String(s.tutar)} onCommit={(v) => updateSiparis(s.id, { tutar: Number(v) || 0 })} />
+        <TutarHucre value={s.tutar} onCommit={(v) => updateSiparis(s.id, { tutar: v })} />
       </td>
       <td className="align-top num">
         <div className="px-2 py-1.5 tabular">{formatTL(h.odenen)}</div>

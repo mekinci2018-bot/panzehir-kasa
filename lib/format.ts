@@ -16,6 +16,14 @@ export function formatTL(amount: number): string {
   );
 }
 
+// Reads an amount typed plainly ("17900", "17900.5") or in Turkish format ("₺17.900,00", "17.900").
+export function tutarOku(metin: string): number {
+  let v = metin.replace(/[₺\s]/g, "");
+  if (v.includes(",")) v = v.replace(/\./g, "").replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(v)) v = v.replace(/\./g, "");
+  return Number(v) || 0;
+}
+
 export function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-");
   if (!y || !m || !d) return iso;

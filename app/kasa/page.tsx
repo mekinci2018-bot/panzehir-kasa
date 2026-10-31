@@ -10,6 +10,8 @@ import { hesapEtiketi } from "@/components/OdemeSekliSelect";
 import FirmaLink from "@/components/FirmaLink";
 import MonthNav from "@/components/MonthNav";
 import AyKasaOzeti from "@/components/AyKasaOzeti";
+import { SiraCubugu } from "@/components/SiraBasligi";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 import { aylikKasa } from "@/lib/donem";
 import { kartOnerileri, useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaSiparisOzetleri, siparisHesap, siparisOdemeleri } from "@/lib/siparis";
@@ -337,6 +339,14 @@ export default function KasaPage() {
   );
 }
 
+// Amounts sort signed: money out counts as negative, like the "−" shown in the list.
+const BUGUN_SUTUNLARI: SiraSutunlari<KasaKaydi> = {
+  saat: (k) => k.createdAt,
+  firma: (k) => k.firma,
+  aciklama: (k) => k.aciklama,
+  tutar: (k) => (k.yon === "gelen" ? k.toplamTutar : -k.toplamTutar),
+};
+
 function BugunGirilenler({
   items,
   loading,
@@ -348,6 +358,8 @@ function BugunGirilenler({
   hesaplar: BankaHesabi[];
   onSelect: (id: string) => void;
 }) {
+  const { sira, sirala: siraDegistir } = useSiralama("kasa.bugun");
+  const sirali = useMemo(() => sirala(items, sira, BUGUN_SUTUNLARI), [items, sira]);
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-2">
@@ -359,11 +371,19 @@ function BugunGirilenler({
           Arşiv <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
+      {items.length > 1 && (
+        <SiraCubugu
+          className="mb-1"
+          sutunlar={[["saat", "Saat"], ["firma", "Firma"], ["aciklama", "Açıklama"], ["tutar", "Tutar"]]}
+          sira={sira}
+          onSirala={siraDegistir}
+        />
+      )}
       {items.length === 0 ? (
         <p className="text-sm text-[var(--muted)] py-2">{loading ? "yükleniyor…" : "Bugün henüz kayıt girilmedi."}</p>
       ) : (
         <ul className="flex flex-col divide-y divide-[var(--border)] -mx-2">
-          {items.map((k) => {
+          {sirali.map((k) => {
             const hesap = hesaplar.find((h) => h.id === k.bankaHesapId);
             const odeme = [ODEME_SEKLI_LABEL[k.odemeSekli], hesap ? hesapEtiketi(hesap) : k.kartAciklama]
               .filter(Boolean)

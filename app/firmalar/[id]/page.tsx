@@ -8,7 +8,10 @@ import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 import { useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler, kartOnerileri } from "@/lib/hooks";
 import { siparisOdemeleri } from "@/lib/siparis";
 import SiparisDetayModal from "@/components/SiparisDetayModal";
-import { ekstreOlustur, FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
+import { ekstreOlustur, FIRMA_TURU_LABEL, firmaTuru, type EkstreSatiri } from "@/lib/firma";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
+import { SiraTh } from "@/components/SiraBasligi";
+import type { KasaKaydi } from "@/lib/types";
 import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatDate, formatTL, shiftMonthKey, todayISO } from "@/lib/format";
 import { hareketlerOf } from "@/lib/hareketler";
 import EmptyState from "@/components/EmptyState";
@@ -40,6 +43,34 @@ function hazirAralik(tur: AralikTuru): { bas: string; bit: string } {
   return { bas: "", bit: "" };
 }
 
+const EKSTRE_SUTUNLARI: SiraSutunlari<EkstreSatiri> = {
+  tarih: (s) => s.tarih,
+  aciklama: (s) => s.aciklama,
+  borc: (s) => s.borc || null,
+  alacak: (s) => s.alacak || null,
+};
+
+const HARCAMA_SUTUNLARI: SiraSutunlari<KasaKaydi> = {
+  tarih: (k) => k.tarih,
+  aciklama: (k) => k.aciklama,
+  odeme: (k) => ODEME_SEKLI_LABEL[k.odemeSekli],
+  tutar: (k) => (k.yon === "giden" ? k.toplamTutar : -k.toplamTutar),
+};
+
+function DevredenSatiri({ tarih, bakiye }: { tarih: string; bakiye: number }) {
+  return (
+    <tr className="bg-[#f8f8fa]">
+      <td className="tabular">{formatDate(tarih)}</td>
+      <td className="font-medium">Devreden bakiye</td>
+      <td className="num"></td>
+      <td className="num"></td>
+      <td className="num">
+        <BakiyeHucre bakiye={bakiye} />
+      </td>
+    </tr>
+  );
+}
+
 export default function CariEkstrePage() {
   const { id } = useParams<{ id: string }>();
   const { firmalar, loading: firmaLoading } = useFirmalar();
@@ -50,6 +81,8 @@ export default function CariEkstrePage() {
   const [siparisDetayId, setSiparisDetayId] = useState<string | null>(null);
   const [aralik, setAralik] = useState<{ tur: AralikTuru; bas: string; bit: string }>({ tur: "tumu", bas: "", bit: "" });
   const aralikta = (tarih: string) => (!aralik.bas || tarih >= aralik.bas) && (!aralik.bit || tarih <= aralik.bit);
+  const { sira, sirala: siraDegistir } = useSiralama("ekstre");
+  const { sira: harcamaSira, sirala: harcamaSiraDegistir } = useSiralama("harcama-dokumu");
 
   const firma = firmalar.find((f) => f.id === id);
   const firmaKayitlari = useMemo(() => kayitlar.filter((k) => k.firmaId === id), [kayitlar, id]);
@@ -64,6 +97,11 @@ export default function CariEkstrePage() {
   // balance carried in from before it.
   const aralikSatirlari = satirlar.filter((s) => aralikta(s.tarih));
   const devreden = aralik.bas ? ([...satirlar].reverse().find((s) => s.tarih < aralik.bas)?.bakiye ?? 0) : 0;
+  // Sorting only reorders the rows; each row keeps its running balance from the date order. Sorted by
+  // anything but the date, that balance no longer reads top to bottom, so the column is hidden.
+  const gosterilenSatirlar = sirala(aralikSatirlari, sira, EKSTRE_SUTUNLARI);
+  const bakiyeGorunur = !sira || sira.sutun === "tarih";
+  const devredenYeri = !aralik.bas || !bakiyeGorunur ? null : sira?.yon === "azalan" ? "alt" : "ust";
 
   // Ciro: sales and orders in the range. Order payments are Kasa records too, so they count as
   // collections only, on the day the money came in.
@@ -93,9 +131,13 @@ export default function CariEkstrePage() {
   const gider = firma ? firmaTuru(firma) === "gider" : false;
 
   // Expense items have no cari: just what was spent in the range, newest first.
-  const harcamalar = [...firmaKayitlari]
-    .filter((k) => aralikta(k.tarih))
-    .sort((a, b) => (a.tarih === b.tarih ? b.createdAt - a.createdAt : a.tarih < b.tarih ? 1 : -1));
+  const harcamalar = sirala(
+    [...firmaKayitlari]
+      .filter((k) => aralikta(k.tarih))
+      .sort((a, b) => (a.tarih === b.tarih ? b.createdAt - a.createdAt : a.tarih < b.tarih ? 1 : -1)),
+    harcamaSira,
+    HARCAMA_SUTUNLARI
+  );
   const toplamHarcama = harcamalar.reduce((s, k) => s + (k.yon === "giden" ? k.toplamTutar : -k.toplamTutar), 0);
 
   if (!firma) {
@@ -176,10 +218,10 @@ export default function CariEkstrePage() {
                 <table className="w-full text-sm data-table">
                   <thead>
                     <tr>
-                      <th className="w-[110px]">Tarih</th>
-                      <th>Açıklama</th>
-                      <th className="w-[200px]">Ödeme</th>
-                      <th className="w-[150px] text-right">Tutar</th>
+                      <SiraTh sutun="tarih" sira={harcamaSira} onSirala={harcamaSiraDegistir} className="w-[110px]">Tarih</SiraTh>
+                      <SiraTh sutun="aciklama" sira={harcamaSira} onSirala={harcamaSiraDegistir}>Açıklama</SiraTh>
+                      <SiraTh sutun="odeme" sira={harcamaSira} onSirala={harcamaSiraDegistir} className="w-[200px]">Ödeme</SiraTh>
+                      <SiraTh sutun="tutar" sira={harcamaSira} onSirala={harcamaSiraDegistir} className="w-[150px] text-right">Tutar</SiraTh>
                     </tr>
                   </thead>
                   <tbody>
@@ -231,41 +273,39 @@ export default function CariEkstrePage() {
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>
-                  <th className="w-[110px]">Tarih</th>
-                  <th>Açıklama</th>
-                  <th className="w-[140px] text-right">Borç</th>
-                  <th className="w-[140px] text-right">Alacak</th>
-                  <th className="w-[170px] text-right">Bakiye</th>
+                  <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="w-[110px]">Tarih</SiraTh>
+                  <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir}>Açıklama</SiraTh>
+                  <SiraTh sutun="borc" sira={sira} onSirala={siraDegistir} className="w-[140px] text-right">Borç</SiraTh>
+                  <SiraTh sutun="alacak" sira={sira} onSirala={siraDegistir} className="w-[140px] text-right">Alacak</SiraTh>
+                  {bakiyeGorunur && <th className="w-[170px] text-right">Bakiye</th>}
                 </tr>
               </thead>
               <tbody>
-                {aralik.bas && (
-                  <tr className="bg-[#f8f8fa]">
-                    <td className="tabular">{formatDate(aralik.bas)}</td>
-                    <td className="font-medium">Devreden bakiye</td>
-                    <td className="num"></td>
-                    <td className="num"></td>
-                    <td className="num">
-                      <BakiyeHucre bakiye={devreden} />
-                    </td>
-                  </tr>
-                )}
-                {aralikSatirlari.map((s) => (
+                {devredenYeri === "ust" && <DevredenSatiri tarih={aralik.bas} bakiye={devreden} />}
+                {gosterilenSatirlar.map((s) => (
                   <tr key={s.key} className="cursor-pointer print:cursor-auto" onClick={() => (s.siparis ? setSiparisDetayId(s.kayitId) : setDetayId(s.kayitId))}>
                     <td className="tabular">{formatDate(s.tarih)}</td>
                     <td>{s.aciklama}</td>
                     <td className="num">{s.borc ? formatTL(s.borc) : ""}</td>
                     <td className="num text-[var(--accent-green)]">{s.alacak ? formatTL(s.alacak) : ""}</td>
-                    <td className="num">
-                      <BakiyeHucre bakiye={s.bakiye} />
-                    </td>
+                    {bakiyeGorunur && (
+                      <td className="num">
+                        <BakiyeHucre bakiye={s.bakiye} />
+                      </td>
+                    )}
                   </tr>
                 ))}
+                {devredenYeri === "alt" && <DevredenSatiri tarih={aralik.bas} bakiye={devreden} />}
               </tbody>
             </table>
           </div>
         )}
       </div>
+      {!bakiyeGorunur && (
+        <p className="text-[11px] text-[var(--accent-orange)] -mt-3 print:mt-0">
+          Bakiye sütunu yalnızca tarih sırasında gösterilir; görmek için Tarih başlığına tıklayın ya da sıralamayı kaldırın.
+        </p>
+      )}
       <p className="text-[11px] text-[var(--muted-soft)] -mt-3 print:mt-0">
         Borç: firmanın borçlandığı tutar (satış ya da firmaya yaptığımız ödeme). Alacak: firmanın ödediği ya da bizden alacaklandığı tutar.
         Bakiye &ldquo;Alacak&rdquo; ise firma bize borçlu, &ldquo;Borç&rdquo; ise biz firmaya borçluyuz.

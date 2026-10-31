@@ -15,6 +15,8 @@ import FirmaLink from "@/components/FirmaLink";
 import MonthNav from "@/components/MonthNav";
 import AyKasaOzeti from "@/components/AyKasaOzeti";
 import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
+import { SiraTh } from "@/components/SiraBasligi";
+import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 type Sekme = "tumu" | "gelen" | "giden" | "harcama" | "tedarikci" | "personel";
 
@@ -49,6 +51,19 @@ function sekmedeMi(sekme: Sekme, k: KasaKaydi, firmalar: Map<string, Firma>): bo
       return k.yon === "giden" && !!k.personelId;
   }
 }
+
+// Durum: Açık → Tamamlandı → Kapatıldı.
+const DURUM_SIRASI: KasaKaydi["durum"][] = ["aktif", "tamamlandi", "arsiv"];
+
+const ARSIV_SUTUNLARI: SiraSutunlari<KasaKaydi> = {
+  tarih: (k) => k.tarih,
+  firma: (k) => k.firma,
+  islem: (k) => (k.yon === "gelen" ? 0 : 1),
+  odeme: (k) => ODEME_SEKLI_LABEL[k.odemeSekli],
+  toplam: (k) => k.toplamTutar,
+  alinan: (k) => k.alinanTutar,
+  durum: (k) => DURUM_SIRASI.indexOf(k.durum),
+};
 
 function oku<T>(anahtar: string, varsayilan: T, gecerli: (v: unknown) => boolean): T {
   try {
@@ -128,7 +143,11 @@ export default function ArsivPage() {
       .sort((a, b) => b.tutar - a.tutar);
   }, [sekme, sekmedekiler, firmaMap]);
 
-  const gorunen = kalem ? sekmedekiler.filter((k) => k.firmaId === kalem) : sekmedekiler;
+  const { sira, sirala: siraDegistir } = useSiralama("arsiv");
+  const gorunen = useMemo(
+    () => sirala(kalem ? sekmedekiler.filter((k) => k.firmaId === kalem) : sekmedekiler, sira, ARSIV_SUTUNLARI),
+    [sekmedekiler, kalem, sira]
+  );
 
   // Summary of what is listed: Net = Gelen − Giden.
   const ozet = useMemo(() => {
@@ -313,13 +332,13 @@ export default function ArsivPage() {
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>
-                  <th className="w-[110px]">Tarih</th>
-                  <th>Firma / Açıklama</th>
-                  <th className="w-[90px]">İşlem</th>
-                  <th className="w-[160px]">Ödeme</th>
-                  <th className="w-[130px] text-right">Toplam</th>
-                  <th className="w-[150px] text-right">Alınan / Ödenen</th>
-                  <th className="w-[110px]">Durum</th>
+                  <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="w-[110px]">Tarih</SiraTh>
+                  <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir}>Firma / Açıklama</SiraTh>
+                  <SiraTh sutun="islem" sira={sira} onSirala={siraDegistir} className="w-[90px]">İşlem</SiraTh>
+                  <SiraTh sutun="odeme" sira={sira} onSirala={siraDegistir} className="w-[160px]">Ödeme</SiraTh>
+                  <SiraTh sutun="toplam" sira={sira} onSirala={siraDegistir} className="w-[130px] text-right">Toplam</SiraTh>
+                  <SiraTh sutun="alinan" sira={sira} onSirala={siraDegistir} className="w-[150px] text-right">Alınan / Ödenen</SiraTh>
+                  <SiraTh sutun="durum" sira={sira} onSirala={siraDegistir} className="w-[110px]">Durum</SiraTh>
                 </tr>
               </thead>
               <tbody>

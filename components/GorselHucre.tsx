@@ -37,7 +37,7 @@ function Onizleme({ id, onClick }: { id: string; onClick: () => void }) {
       ref={ref}
       type="button"
       tabIndex={-1}
-      className="w-10 h-10 rounded-md overflow-hidden bg-[#f1f1f4] shrink-0 ring-1 ring-[var(--border)] hover:ring-[var(--border-strong)]"
+      className="w-20 h-20 rounded-md overflow-hidden bg-[#f1f1f4] shrink-0 ring-1 ring-[var(--border)] hover:ring-[var(--border-strong)]"
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -58,7 +58,7 @@ function YerelOnizleme({ dosya, onSil }: { dosya: File; onSil: () => void }) {
     return () => URL.revokeObjectURL(url);
   }, [dosya]);
   return (
-    <span className="relative w-10 h-10 rounded-md overflow-hidden bg-[#f1f1f4] shrink-0 ring-1 ring-[var(--border)] group">
+    <span className="relative w-20 h-20 rounded-md overflow-hidden bg-[#f1f1f4] shrink-0 ring-1 ring-[var(--border)] group">
       {/* eslint-disable-next-line @next/next/no-img-element -- local object URL */}
       <img ref={imgRef} alt="" className="w-full h-full object-cover" />
       <button
@@ -116,7 +116,7 @@ export default function GorselHucre({
   return (
     <div
       tabIndex={0}
-      className={`min-h-[44px] min-w-[96px] rounded-lg px-1 py-1 flex flex-wrap items-center gap-1 outline-none transition-colors focus:ring-2 focus:ring-[var(--focus-ring)] focus:bg-white ${
+      className={`min-h-[84px] min-w-[120px] rounded-lg px-1 py-1 flex flex-wrap items-center gap-1 outline-none transition-colors focus:ring-2 focus:ring-[var(--focus-ring)] focus:bg-white ${
         surukle ? "bg-[var(--accent-blue-soft)] ring-2 ring-[var(--accent-blue)]/30" : "hover:bg-[#f6f6f8]"
       }`}
       title="Tıklayıp Ctrl+V ile yapıştırın, sürükleyip bırakın ya da + ile seçin"
@@ -146,7 +146,7 @@ export default function GorselHucre({
         <YerelOnizleme key={i} dosya={d} onSil={() => onBekleyenler?.(bekleyenler.filter((_, j) => j !== i))} />
       ))}
       {yukleniyor > 0 && (
-        <span className="w-10 h-10 rounded-md bg-[#f1f1f4] flex items-center justify-center">
+        <span className="w-20 h-20 rounded-md bg-[#f1f1f4] flex items-center justify-center">
           <Loader2 className="w-4 h-4 animate-spin text-[var(--muted)]" />
         </span>
       )}

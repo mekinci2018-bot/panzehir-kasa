@@ -13,6 +13,7 @@ import GorselHucre from "./GorselHucre";
 import AmountModal from "./AmountModal";
 import { FaturaRozeti, OdemeRozeti, UretimRozeti } from "./Rozetler";
 import { hesapEtiketi } from "./OdemeSekliSelect";
+import { SiparisFormuButonu } from "./SiparisYazdir";
 
 export const UYARI_RENK = {
   gecti: "text-[var(--accent-red)]",
@@ -148,6 +149,7 @@ export default function SiparisDetayModal({
               <OdemeRozeti durum={odemeDurumu(siparis, h)} />
               <FaturaRozeti kesildi={siparis.fatura} onToggle={() => updateSiparis(siparis.id, { fatura: !siparis.fatura })} />
               {siparis.kaynak === "excel" && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Excel</span>}
+              <SiparisFormuButonu siparis={siparis} h={h} />
             </div>
           </div>
           <button className="icon-btn -mr-2" onClick={onClose} aria-label="Kapat">

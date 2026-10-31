@@ -110,10 +110,14 @@ export function sekmedeMi(sekme: SiparisSekmesi, s: Siparis, h: SiparisHesap): b
   }
 }
 
-// An order from an earlier month stays in view until it is both fully paid and delivered.
-export function devrederMi(s: Siparis, h: SiparisHesap): boolean {
-  return h.kalan > 0 || s.uretim !== "teslim";
+// Only work still in production carries over to later months on Siparişler. Unpaid remainders of
+// finished orders stay in their own month here; Alacaklar and the company statement keep tracking them.
+export function devrederMi(s: Siparis): boolean {
+  return s.uretim === "uretimde";
 }
+
+// Sort order of the payment badge column: Ödenmedi → Kısmi → Ödendi (written-off last).
+export const ODEME_SIRASI: OdemeDurumu[] = ["odenmedi", "kismi", "odendi", "kapatildi"];
 
 // Kasa row summary counts for a company.
 export interface SiparisOzet {
