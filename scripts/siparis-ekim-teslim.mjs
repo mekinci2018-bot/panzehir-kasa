@@ -8,8 +8,8 @@
 // Ortak kasa hesabının PIN'ini sorar (KASA_PIN ortam değişkeni ile de verilebilir). Bu betiği kendi
 // terminalinde çalıştır; PIN burada sohbete yazılmaz.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createInterface } from "node:readline/promises";
 import { initializeApp } from "firebase/app";
+import { gizliSor } from "./_gizli-giris.mjs";
 import { inMemoryPersistence, initializeAuth, signInWithEmailAndPassword } from "firebase/auth";
 import { collection, doc, getDocs, getFirestore, writeBatch } from "firebase/firestore";
 
@@ -51,12 +51,7 @@ const app = initializeApp({
 const auth = initializeAuth(app, { persistence: inMemoryPersistence });
 const db = getFirestore(app);
 
-let pin = process.env.KASA_PIN;
-if (!pin) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  pin = await rl.question("Kasa PIN: ");
-  rl.close();
-}
+const pin = process.env.KASA_PIN ?? (await gizliSor("Kasa PIN (gizli): "));
 await signInWithEmailAndPassword(auth, KASA_EMAIL, pin);
 
 const siparisSnap = await getDocs(collection(db, "siparisler"));

@@ -86,6 +86,7 @@ export function SiparisYazdirmaListesi({
         <table className="yazdir-tablo mt-2">
           <thead>
             <tr>
+              <th className="w-[38px]">No</th>
               <th className="w-[105px]">Firma</th>
               <th className="w-[52px]">Tarih</th>
               <th>Ürün / İş</th>
@@ -104,7 +105,7 @@ export function SiparisYazdirmaListesi({
             {bolumler.map((b) => [
               bolumler.length > 1 && b.satirlar.length > 0 && (
                 <tr key={`${b.baslik}-b`} className="grup-basi">
-                  <td colSpan={12}>
+                  <td colSpan={13}>
                     {b.baslik} <span className="font-normal text-[var(--muted)]">({b.satirlar.length} iş)</span>
                   </td>
                 </tr>
@@ -114,6 +115,7 @@ export function SiparisYazdirmaListesi({
                 const gorsel = s.siparisGorselleri[0] && gorseller.get(s.siparisGorselleri[0]);
                 return (
                   <tr key={s.id}>
+                    <td className="tabular">{s.siparisNo ?? "—"}</td>
                     <td className="font-medium">{s.firmaAdi}</td>
                     <td className="tabular">{formatDate(s.tarih)}</td>
                     <td className="whitespace-pre-line">{s.urun || "—"}</td>
@@ -140,7 +142,7 @@ export function SiparisYazdirmaListesi({
               }),
             ])}
             <tr className="genel-toplam">
-              <td colSpan={4}>Toplam · {hepsi.length} sipariş</td>
+              <td colSpan={5}>Toplam · {hepsi.length} sipariş</td>
               <td className="sag">{formatTL(toplam(({ s }) => s.tutar))}</td>
               <td className="sag">{formatTL(toplam(({ h }) => h.odenen))}</td>
               <td className="sag">{formatTL(toplam(({ h }) => h.kalan))}</td>
@@ -204,7 +206,9 @@ function SiparisFormu({ siparis, h, gorsel }: { siparis: Siparis; h: SiparisHesa
         {/* eslint-disable-next-line @next/next/no-img-element -- printed once, no optimization needed */}
         <img src="/logo.png" alt="Panzehir Reklam" className="w-[170px] h-auto" />
         <div className="text-right">
-          <div className="text-[18px] font-semibold text-[var(--ink)]">Sipariş Formu</div>
+          <div className="text-[18px] font-semibold text-[var(--ink)]">
+            Sipariş Formu {siparis.siparisNo && <span className="tabular">· #{siparis.siparisNo}</span>}
+          </div>
           <div className="text-[11px] text-[var(--muted)] mt-0.5">
             Düzenlenme: {new Date().toLocaleString("tr-TR", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
           </div>

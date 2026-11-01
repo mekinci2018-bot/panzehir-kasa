@@ -374,6 +374,11 @@ function siparisOdemesiVerisi(s: Pick<Siparis, "id" | "firmaId" | "firmaAdi" | "
   });
 }
 
+// One counter document (sistem/siparisSayaci); the backfill script sets it to the last number it
+// assigned, so new orders keep counting up from there without colliding.
+const SIPARIS_SAYAC_REF = () => doc(getDb(), "sistem", "siparisSayaci");
+const SIPARIS_NO_BASLANGIC = 1000; // first order created becomes 1001
+
 export async function addSiparis(
   input: Pick<Siparis, "firmaId" | "firmaAdi" | "tarih" | "urun" | "tutar" | "aciklama"> & { odemeGunu?: string },
   pesin?: OdemeGirdisi
@@ -382,21 +387,28 @@ export async function addSiparis(
   const ref = doc(collection(getDb(), SIPARISLER));
   const now = Date.now();
   const { odemeGunu, ...rest } = input;
-  const batch = writeBatch(getDb());
-  batch.set(ref, {
-    ...rest,
-    ...(odemeGunu ? { odemeGunu } : {}),
-    uretim: "bekliyor",
-    fatura: false,
-    siparisGorselleri: [],
-    bitenGorselleri: [],
-    createdAt: now,
-    updatedAt: now,
+  // The counter is read and bumped in the same transaction as the write, so two devices creating an
+  // order at once can't both get the same Sipariş No.
+  await runTransaction(getDb(), async (tx) => {
+    const sayacRef = SIPARIS_SAYAC_REF();
+    const sayac = await tx.get(sayacRef);
+    const siparisNo = (sayac.exists() ? (sayac.data().son as number) : SIPARIS_NO_BASLANGIC) + 1;
+    tx.set(sayacRef, { son: siparisNo });
+    tx.set(ref, {
+      ...rest,
+      ...(odemeGunu ? { odemeGunu } : {}),
+      siparisNo,
+      uretim: "bekliyor",
+      fatura: false,
+      siparisGorselleri: [],
+      bitenGorselleri: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (pesin && pesin.tutar > 0) {
+      tx.set(doc(collection(getDb(), KAYITLAR)), siparisOdemesiVerisi({ id: ref.id, ...input }, pesin, input.tarih));
+    }
   });
-  if (pesin && pesin.tutar > 0) {
-    batch.set(doc(collection(getDb(), KAYITLAR)), siparisOdemesiVerisi({ id: ref.id, ...input }, pesin, input.tarih));
-  }
-  await batch.commit();
   return ref;
 }
 

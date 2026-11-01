@@ -1,9 +1,10 @@
 "use client";
 
 import { Check } from "lucide-react";
-import type { BankaHesabi, Calisan, Firma, OdemeSekli, Yon } from "@/lib/types";
+import type { BankaHesabi, Calisan, Firma, Siparis, OdemeSekli, Yon } from "@/lib/types";
 import OdemeSekliSelect from "@/components/OdemeSekliSelect";
 import FirmaSecici from "@/components/FirmaSecici";
+import SonSiparisler from "@/components/SonSiparisler";
 
 export interface DraftKayit {
   tarih: string;
@@ -26,6 +27,8 @@ export default function KayitRow({
   firmalar,
   calisanlar,
   cariOzet,
+  siparisler,
+  onSiparisDetay,
   kartOnerileri,
   onSave,
   onChange,
@@ -35,6 +38,8 @@ export default function KayitRow({
   firmalar: Firma[];
   calisanlar: Calisan[];
   cariOzet?: string; // live balance summary of the chosen company
+  siparisler: Siparis[];
+  onSiparisDetay: (id: string) => void;
   kartOnerileri: string[];
   onSave: () => void;
   onChange: (patch: Partial<DraftKayit>) => void;
@@ -70,6 +75,9 @@ export default function KayitRow({
         />
         {bagli && cariOzet && (
           <div className="px-2 text-[11px] text-[var(--muted)] tabular truncate">{cariOzet}</div>
+        )}
+        {bagli && value.firmaId && (
+          <SonSiparisler siparisler={siparisler} firmaId={value.firmaId} onSec={onSiparisDetay} />
         )}
         {!bagli && value.firma.trim() && (
           <div className="px-2 text-[11px] text-[var(--accent-orange)]">Listeden seçin ya da yeni firma ekleyin</div>

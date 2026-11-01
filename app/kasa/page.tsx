@@ -6,6 +6,9 @@ import { ArrowRight } from "lucide-react";
 import StatStrip from "@/components/StatStrip";
 import PageHeader from "@/components/PageHeader";
 import KayitDetayModal from "@/components/KayitDetayModal";
+import SiparisDetayModal, { SiparisOdemeModal } from "@/components/SiparisDetayModal";
+import BugunAranacaklar, { type AramaSatiri } from "@/components/BugunAranacaklar";
+import FirmaFormModal from "@/components/FirmaFormModal";
 import { hesapEtiketi } from "@/components/OdemeSekliSelect";
 import FirmaLink from "@/components/FirmaLink";
 import MonthNav from "@/components/MonthNav";
@@ -18,8 +21,9 @@ import { firmaSiparisOzetleri, siparisHesap, siparisOdemeleri } from "@/lib/sipa
 import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
 import { tumHareketler, signed } from "@/lib/hareketler";
-import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatTL, isoDayOf, todayISO } from "@/lib/format";
-import type { BankaHesabi, KasaKaydi } from "@/lib/types";
+import { siparisWaMesaji } from "@/lib/whatsapp";
+import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatDate, formatTL, isoDayOf, todayISO } from "@/lib/format";
+import type { BankaHesabi, Firma, KasaKaydi } from "@/lib/types";
 import KayitRow, { type DraftKayit } from "./KayitRow";
 
 const DRAFT_COUNT = 5;
@@ -65,6 +69,9 @@ export default function KasaPage() {
   const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit } | null>(null);
   const geriAlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detayId, setDetayId] = useState<string | null>(null);
+  const [siparisDetayId, setSiparisDetayId] = useState<string | null>(null);
+  const [odemeSiparisId, setOdemeSiparisId] = useState<string | null>(null);
+  const [telefonFirma, setTelefonFirma] = useState<Firma | null>(null);
   const [ozetAyi, setOzetAyi] = useState(currentMonthKey);
 
   useEffect(() => () => {
@@ -128,6 +135,42 @@ export default function KasaPage() {
   }, [kayitlar]);
 
   const detay = detayId ? kayitlar.find((k) => k.id === detayId) : undefined;
+  const siparisDetay = siparisDetayId ? siparisler.find((s) => s.id === siparisDetayId) : undefined;
+  const odemeSiparis = odemeSiparisId ? siparisler.find((s) => s.id === odemeSiparisId) : undefined;
+
+  // Ödeme günü geçmiş/bugün olan açık siparişler ile bugünün/geçmişin tahsilat notları, firma
+  // bazında gruplu tek liste.
+  const aramaListesi = useMemo(() => {
+    const bugun = todayISO();
+    const map = new Map<string, AramaSatiri>();
+    for (const s of siparisler) {
+      const h = siparisHesap(s, odemeler);
+      const odemeGecti = !!s.odemeGunu && s.odemeGunu <= bugun && h.kalan > 0.005;
+      const notlar = (s.tahsilatNotlari ?? []).filter((n) => n.tarih <= bugun);
+      if (!odemeGecti && notlar.length === 0) continue;
+      const satir: AramaSatiri =
+        map.get(s.firmaId) ??
+        ({
+          firmaId: s.firmaId,
+          firmaAdi: s.firmaAdi,
+          telefon: firmalar.find((f) => f.id === s.firmaId)?.telefon,
+          sebepler: [],
+          toplamKalan: 0,
+          waMesaj: siparisWaMesaji(s, h),
+        } as AramaSatiri);
+      if (odemeGecti) {
+        satir.sebepler.push(`Ödeme günü ${formatDate(s.odemeGunu!)} · ${formatTL(h.kalan)}`);
+        satir.toplamKalan += h.kalan;
+        if (!satir.odemeAlinacakSiparis || h.kalan > siparisHesap(satir.odemeAlinacakSiparis, odemeler).kalan) {
+          satir.odemeAlinacakSiparis = s;
+          satir.waMesaj = siparisWaMesaji(s, h);
+        }
+      }
+      for (const n of notlar) satir.sebepler.push(`Not: ${n.metin}`);
+      map.set(s.firmaId, satir);
+    }
+    return [...map.values()].sort((a, b) => b.toplamKalan - a.toplamKalan);
+  }, [siparisler, odemeler, firmalar]);
 
   function bildirimGoster(id: string, draft: DraftKayit) {
     if (geriAlTimer.current) clearTimeout(geriAlTimer.current);
@@ -240,6 +283,8 @@ export default function KasaPage() {
         ]}
       />
 
+      <BugunAranacaklar items={aramaListesi} onOdeme={(s) => setOdemeSiparisId(s.id)} onTelefonEksik={(firmaId) => setTelefonFirma(firmalar.find((f) => f.id === firmaId) ?? null)} />
+
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold">Aylık kasa özeti</h2>
@@ -275,6 +320,8 @@ export default function KasaPage() {
                   firmalar={firmalar}
                   calisanlar={calisanlar}
                   cariOzet={cariOzetMetni(s.value)}
+                  siparisler={siparisler}
+                  onSiparisDetay={setSiparisDetayId}
                   kartOnerileri={oneriler}
                   onSave={() => saveDraft(s.key)}
                   onChange={(patch) => updateDraft(s.key, patch)}
@@ -297,6 +344,39 @@ export default function KasaPage() {
           hesaplar={hesaplar}
           kartOnerileri={oneriler}
           onClose={() => setDetayId(null)}
+        />
+      )}
+
+      {siparisDetay && (
+        <SiparisDetayModal
+          key={siparisDetay.id}
+          siparis={siparisDetay}
+          odemeKayitlari={kayitlar.filter((k) => k.siparisId === siparisDetay.id)}
+          odemeler={odemeler}
+          hesaplar={hesaplar}
+          kartOnerileri={oneriler}
+          onClose={() => setSiparisDetayId(null)}
+        />
+      )}
+
+      {odemeSiparis && (
+        <SiparisOdemeModal
+          siparis={odemeSiparis}
+          kalan={siparisHesap(odemeSiparis, odemeler).kalan}
+          hesaplar={hesaplar}
+          kartOnerileri={oneriler}
+          onClose={() => setOdemeSiparisId(null)}
+        />
+      )}
+
+      {telefonFirma && (
+        <FirmaFormModal
+          firma={telefonFirma}
+          firmalar={firmalar}
+          bagliKayitlar={[]}
+          bagliSiparisIds={[]}
+          odaklan="telefon"
+          onClose={() => setTelefonFirma(null)}
         />
       )}
 

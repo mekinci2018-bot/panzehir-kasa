@@ -5,12 +5,15 @@ import { MessageSquarePlus, Trash2, X } from "lucide-react";
 import { siparisOdemeAl, siparisSil, tahsilatNotuEkle, tahsilatNotuSil, updateSiparis } from "@/lib/db";
 import { useFirmalar } from "@/lib/hooks";
 import { siparisHesap, odemeDurumu, tahsilatUyari } from "@/lib/siparis";
+import { siparisWaMesaji } from "@/lib/whatsapp";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL, todayISO } from "@/lib/format";
 import type { BankaHesabi, KasaKaydi, Siparis } from "@/lib/types";
 import FirmaSecici, { type FirmaSecimi } from "./FirmaSecici";
 import FirmaLink from "./FirmaLink";
+import FirmaFormModal from "./FirmaFormModal";
 import GorselHucre from "./GorselHucre";
 import AmountModal from "./AmountModal";
+import WhatsappButonu from "./WhatsappButonu";
 import { FaturaRozeti, OdemeRozeti, UretimRozeti } from "./Rozetler";
 import { hesapEtiketi } from "./OdemeSekliSelect";
 import { SiparisFormuButonu } from "./SiparisYazdir";
@@ -82,7 +85,9 @@ export default function SiparisDetayModal({
   const [not, setNot] = useState({ tarih: todayISO(), metin: "" });
   const [odemeAc, setOdemeAc] = useState(false);
   const [silOnay, setSilOnay] = useState(false);
+  const [telefonAcik, setTelefonAcik] = useState(false);
   const [busy, setBusy] = useState(false);
+  const firmaKaydi = firmalar.find((f) => f.id === siparis.firmaId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !odemeAc && onClose();
@@ -143,13 +148,19 @@ export default function SiparisDetayModal({
             <h3 className="font-semibold text-base truncate">
               <FirmaLink firmaId={siparis.firmaId} ad={siparis.firmaAdi} />
               <span className="text-[var(--muted)] font-normal"> · {siparis.urun || "Sipariş"}</span>
+              {siparis.siparisNo && <span className="tabular text-[var(--muted-soft)] font-normal text-sm"> · #{siparis.siparisNo}</span>}
             </h3>
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <UretimRozeti value={siparis.uretim} onChange={(d) => updateSiparis(siparis.id, { uretim: d })} />
               <OdemeRozeti durum={odemeDurumu(siparis, h)} />
-              <FaturaRozeti kesildi={siparis.fatura} onToggle={() => updateSiparis(siparis.id, { fatura: !siparis.fatura })} />
+              <FaturaRozeti kesildi={siparis.fatura} onChange={(v) => updateSiparis(siparis.id, { fatura: v })} />
               {siparis.kaynak === "excel" && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Excel</span>}
               <SiparisFormuButonu siparis={siparis} h={h} />
+              <WhatsappButonu
+                telefon={firmaKaydi?.telefon}
+                mesaj={siparisWaMesaji(siparis, h)}
+                onTelefonEksik={() => setTelefonAcik(true)}
+              />
             </div>
           </div>
           <button className="icon-btn -mr-2" onClick={onClose} aria-label="Kapat">
@@ -352,6 +363,17 @@ export default function SiparisDetayModal({
 
       {odemeAc && (
         <SiparisOdemeModal siparis={siparis} kalan={h.kalan} hesaplar={hesaplar} kartOnerileri={kartOnerileri} onClose={() => setOdemeAc(false)} />
+      )}
+
+      {telefonAcik && firmaKaydi && (
+        <FirmaFormModal
+          firma={firmaKaydi}
+          firmalar={firmalar}
+          bagliKayitlar={[]}
+          bagliSiparisIds={[]}
+          odaklan="telefon"
+          onClose={() => setTelefonAcik(false)}
+        />
       )}
     </div>
   );

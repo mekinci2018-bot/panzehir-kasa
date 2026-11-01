@@ -21,6 +21,7 @@ import { firmaAnahtari, firmaTuru } from "@/lib/firma";
 import {
   ODEME_SIRASI,
   SEKME_LABEL,
+  URETIM_LABEL,
   URETIM_SIRASI,
   devrederMi,
   odemeDurumu,
@@ -34,7 +35,11 @@ import {
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 import { currentMonthKey, formatDate, formatTL, monthLabel, todayISO, tutarOku } from "@/lib/format";
 import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
-import type { BankaHesabi, Firma, GorselAlani, Siparis } from "@/lib/types";
+import { siparisWaMesaji } from "@/lib/whatsapp";
+import WhatsappButonu from "@/components/WhatsappButonu";
+import SonSiparisler from "@/components/SonSiparisler";
+import FirmaFormModal from "@/components/FirmaFormModal";
+import type { BankaHesabi, Firma, GorselAlani, Siparis, UretimDurumu } from "@/lib/types";
 
 const SAYFA = 100; // rows rendered at a time; "Daha fazla göster" adds the next batch
 const SEKME_ANAHTARI = "siparisler.sekme";
@@ -134,9 +139,12 @@ export default function SiparislerPage() {
   const [yeni, setYeni] = useState<Taslak | null>(null);
   const [detayId, setDetayId] = useState<string | null>(null);
   const [odemeId, setOdemeId] = useState<string | null>(null);
+  const [telefonFirma, setTelefonFirma] = useState<Firma | null>(null);
   const [mobilYeni, setMobilYeni] = useState(false);
   const [bildirim, setBildirim] = useState<string | null>(null);
   const bildirimTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [uyari, setUyari] = useState<{ metin: string; geriAl: () => void } | null>(null);
+  const uyariTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { sira, sirala: siraDegistir } = useSiralama("siparisler");
   const [yazdirmaGorselleri, setYazdirmaGorselleri] = useState<Map<string, string>>(() => new Map());
 
@@ -196,7 +204,7 @@ export default function SiparislerPage() {
   const { ayin, devreden } = useMemo(() => {
     if (aramaAnahtari) {
       return {
-        ayin: hesapli.filter(({ s }) => firmaAnahtari(`${s.firmaAdi} ${s.urun} ${s.aciklama}`).includes(aramaAnahtari)),
+        ayin: hesapli.filter(({ s }) => firmaAnahtari(`${s.siparisNo ?? ""} ${s.firmaAdi} ${s.urun} ${s.aciklama}`).includes(aramaAnahtari)),
         devreden: [] as Hesapli[],
       };
     }
@@ -267,6 +275,46 @@ export default function SiparislerPage() {
     if (bildirimTimer.current) clearTimeout(bildirimTimer.current);
     setBildirim(metin);
     bildirimTimer.current = setTimeout(() => setBildirim(null), 3500);
+  }
+
+  function uyariGoster(metin: string, geriAl: () => void) {
+    if (uyariTimer.current) clearTimeout(uyariTimer.current);
+    setUyari({ metin, geriAl });
+    uyariTimer.current = setTimeout(() => setUyari(null), 5000);
+  }
+
+  function guncelle(s: Siparis, patch: Partial<Siparis>) {
+    updateSiparis(s.id, patch).catch((err) => {
+      console.error(err);
+      alert("Güncellenemedi, lütfen tekrar deneyin.");
+    });
+  }
+
+  // Devreden satırları her zaman "Üretimde"; başka bir duruma geçince devreden listesinden çıkar ve
+  // kendi ayına döner. Ayın kendi satırları seçili sekmeden çıkabilir (örn. "Bitti" sekmesinde
+  // "Teslim Edildi"ye alınca) — ikisi de 5 saniyelik "Geri al" bildirimiyle duyurulur.
+  function uretimDegistir(s: Siparis, h: SiparisHesap, devredenSatiri: boolean, yeni: UretimDurumu) {
+    if (yeni === s.uretim) return;
+    const eski = s.uretim;
+    guncelle(s, { uretim: yeni });
+    const kayboldu = devredenSatiri || (sekmedeMi(sekme, s, h) && !sekmedeMi(sekme, { ...s, uretim: yeni }, h));
+    if (kayboldu) {
+      const mesaj = `${s.firmaAdi} · ${s.urun || "—"} → ${URETIM_LABEL[yeni]} olarak işaretlendi${
+        devredenSatiri ? ` ve ${monthLabel(s.tarih.slice(0, 7))} ayına taşındı` : ""
+      }`;
+      uyariGoster(mesaj, () => guncelle(s, { uretim: eski }));
+    }
+  }
+
+  function faturaDegistir(s: Siparis, h: SiparisHesap, yeni: boolean) {
+    if (yeni === s.fatura) return;
+    const eski = s.fatura;
+    guncelle(s, { fatura: yeni });
+    const kayboldu = sekmedeMi(sekme, s, h) && !sekmedeMi(sekme, { ...s, fatura: yeni }, h);
+    if (kayboldu) {
+      const mesaj = `${s.firmaAdi} · ${s.urun || "—"} → ${yeni ? "Fatura kesildi" : "Fatura kesilmedi"} olarak işaretlendi`;
+      uyariGoster(mesaj, () => guncelle(s, { fatura: eski }));
+    }
   }
 
   async function yeniKaydet() {
@@ -401,23 +449,23 @@ export default function SiparislerPage() {
       {/* Desktop: spreadsheet-style table */}
       <div className="card overflow-hidden hidden md:block print:!hidden">
         <CiftKaydirma className="table-scroll siparis-tablo">
-          <table className="text-sm data-table min-w-[2060px] w-full">
+          <table className="text-sm data-table min-w-[2175px] w-full">
             <thead>
               <tr>
                 <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir} className="sabit-1">Firma</SiraTh>
                 <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="sabit-2">Tarih</SiraTh>
                 <SiraTh sutun="urun" sira={sira} onSirala={siraDegistir} className="w-[320px]">Ürün / İş</SiraTh>
                 <th className="w-[190px]">Sipariş Görseli</th>
-                <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[140px] text-right">Tutar</SiraTh>
-                <SiraTh sutun="odenen" sira={sira} onSirala={siraDegistir} className="w-[140px] text-right">Ödenen</SiraTh>
-                <SiraTh sutun="kalan" sira={sira} onSirala={siraDegistir} className="w-[130px] text-right">Kalan</SiraTh>
+                <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[170px] text-right">Tutar</SiraTh>
+                <SiraTh sutun="odenen" sira={sira} onSirala={siraDegistir} className="w-[170px] text-right">Ödenen</SiraTh>
+                <SiraTh sutun="kalan" sira={sira} onSirala={siraDegistir} className="w-[160px] text-right">Kalan</SiraTh>
                 <SiraTh sutun="uretim" sira={sira} onSirala={siraDegistir} className="w-[130px]">Üretim</SiraTh>
                 <SiraTh sutun="odeme" sira={sira} onSirala={siraDegistir} className="w-[100px]">Ödeme</SiraTh>
                 <th className="w-[190px]">Biten Ürün Görseli</th>
                 <SiraTh sutun="fatura" sira={sira} onSirala={siraDegistir} className="w-[100px]">Fatura</SiraTh>
                 <SiraTh sutun="odemeGunu" sira={sira} onSirala={siraDegistir} className="w-[140px]">Ödeme Günü</SiraTh>
                 <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir} className="w-[220px]">Açıklama</SiraTh>
-                <th className="w-[130px]"></th>
+                <th className="w-[165px]"></th>
               </tr>
             </thead>
             <tbody>
@@ -427,6 +475,8 @@ export default function SiparislerPage() {
                   firmalar={musteriler}
                   hesaplar={hesaplar}
                   kartOnerileri={oneriler}
+                  siparisler={siparisler}
+                  onSiparisDetay={setDetayId}
                   onChange={(p) => setYeni((v) => (v ? { ...v, ...p } : v))}
                   onSave={yeniKaydet}
                   onKapat={() => setYeni(null)}
@@ -441,7 +491,19 @@ export default function SiparislerPage() {
               )}
               {devredenAcik &&
                 devredenSekmede.map(({ s, h }) => (
-                  <SiparisSatir key={s.id} s={s} h={h} ayRozeti={rozet(s)} onDetay={() => setDetayId(s.id)} onOdeme={() => setOdemeId(s.id)} />
+                  <SiparisSatir
+                    key={s.id}
+                    s={s}
+                    h={h}
+                    ayRozeti={rozet(s)}
+                    onDetay={() => setDetayId(s.id)}
+                    onOdeme={() => setOdemeId(s.id)}
+                    onUretimDegistir={(yeni) => uretimDegistir(s, h, true, yeni)}
+                    onFaturaDegistir={(yeni) => faturaDegistir(s, h, yeni)}
+                    telefon={firmalar.find((f) => f.id === s.firmaId)?.telefon}
+                    waMesaj={siparisWaMesaji(s, h)}
+                    onTelefonEksik={() => setTelefonFirma(firmalar.find((f) => f.id === s.firmaId) ?? null)}
+                  />
                 ))}
               {devredenSekmede.length > 0 && gorunen.length > 0 && (
                 <tr className="grup-satir">
@@ -453,7 +515,19 @@ export default function SiparislerPage() {
                 </tr>
               )}
               {gorunen.map(({ s, h }) => (
-                <SiparisSatir key={s.id} s={s} h={h} ayRozeti={rozet(s)} onDetay={() => setDetayId(s.id)} onOdeme={() => setOdemeId(s.id)} />
+                <SiparisSatir
+                  key={s.id}
+                  s={s}
+                  h={h}
+                  ayRozeti={rozet(s)}
+                  onDetay={() => setDetayId(s.id)}
+                  onOdeme={() => setOdemeId(s.id)}
+                  onUretimDegistir={(yeni) => uretimDegistir(s, h, false, yeni)}
+                  onFaturaDegistir={(yeni) => faturaDegistir(s, h, yeni)}
+                  telefon={firmalar.find((f) => f.id === s.firmaId)?.telefon}
+                  waMesaj={siparisWaMesaji(s, h)}
+                  onTelefonEksik={() => setTelefonFirma(firmalar.find((f) => f.id === s.firmaId) ?? null)}
+                />
               ))}
             </tbody>
           </table>
@@ -473,10 +547,34 @@ export default function SiparislerPage() {
         {bos && <div className="card px-5 py-8 text-sm text-center text-[var(--muted)]">{bosMetni}</div>}
         {devredenSekmede.length > 0 && <div className="px-1">{devredenBaslik}</div>}
         {devredenAcik &&
-          devredenSekmede.map(({ s, h }) => <SiparisKarti key={s.id} s={s} h={h} ayRozeti={rozet(s)} onClick={() => setDetayId(s.id)} />)}
+          devredenSekmede.map(({ s, h }) => (
+            <SiparisKarti
+              key={s.id}
+              s={s}
+              h={h}
+              ayRozeti={rozet(s)}
+              onClick={() => setDetayId(s.id)}
+              onUretimDegistir={(yeni) => uretimDegistir(s, h, true, yeni)}
+              onFaturaDegistir={(yeni) => faturaDegistir(s, h, yeni)}
+              telefon={firmalar.find((f) => f.id === s.firmaId)?.telefon}
+              waMesaj={siparisWaMesaji(s, h)}
+              onTelefonEksik={() => setTelefonFirma(firmalar.find((f) => f.id === s.firmaId) ?? null)}
+            />
+          ))}
         {devredenSekmede.length > 0 && gorunen.length > 0 && <div className="px-1 pt-2 text-[13px] font-medium">{monthLabel(ay)}</div>}
         {gorunen.map(({ s, h }) => (
-          <SiparisKarti key={s.id} s={s} h={h} ayRozeti={rozet(s)} onClick={() => setDetayId(s.id)} />
+          <SiparisKarti
+            key={s.id}
+            s={s}
+            h={h}
+            ayRozeti={rozet(s)}
+            onClick={() => setDetayId(s.id)}
+            onUretimDegistir={(yeni) => uretimDegistir(s, h, false, yeni)}
+            onFaturaDegistir={(yeni) => faturaDegistir(s, h, yeni)}
+            telefon={firmalar.find((f) => f.id === s.firmaId)?.telefon}
+            waMesaj={siparisWaMesaji(s, h)}
+            onTelefonEksik={() => setTelefonFirma(firmalar.find((f) => f.id === s.firmaId) ?? null)}
+          />
         ))}
         {kalanSayi > 0 && (
           <div className="card">
@@ -507,6 +605,17 @@ export default function SiparislerPage() {
         />
       )}
 
+      {telefonFirma && (
+        <FirmaFormModal
+          firma={telefonFirma}
+          firmalar={firmalar}
+          bagliKayitlar={[]}
+          bagliSiparisIds={[]}
+          odaklan="telefon"
+          onClose={() => setTelefonFirma(null)}
+        />
+      )}
+
       {mobilYeni && (
         <MobilYeniSiparis
           firmalar={musteriler}
@@ -521,6 +630,23 @@ export default function SiparislerPage() {
       {bildirim && (
         <div className="toast-in fixed bottom-6 left-1/2 -translate-x-1/2 z-40 rounded-xl bg-[var(--ink)] text-white px-4 py-2.5 text-sm shadow-[var(--shadow-pop)]">
           {bildirim}
+        </div>
+      )}
+
+      {uyari && (
+        <div className="toast-in fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 rounded-xl bg-[var(--ink)] text-white pl-4 pr-2 py-2 text-sm shadow-[var(--shadow-pop)]">
+          <span>{uyari.metin}</span>
+          <span className="text-white/30">·</span>
+          <button
+            className="font-semibold text-white hover:bg-white/10 rounded-lg px-2.5 py-1 transition-colors shrink-0"
+            onClick={() => {
+              if (uyariTimer.current) clearTimeout(uyariTimer.current);
+              uyari.geriAl();
+              setUyari(null);
+            }}
+          >
+            Geri al
+          </button>
         </div>
       )}
     </div>
@@ -683,26 +809,45 @@ function AyRozeti({ ay }: { ay?: string }) {
   return <span className="badge bg-[#f1f1f4] text-[var(--muted)] shrink-0">{ay}</span>;
 }
 
+// Eski (göç öncesi) siparişlerde henüz numara yoksa hiçbir şey göstermez.
+function SiparisNoEtiketi({ no }: { no?: number }) {
+  if (!no) return null;
+  return <span className="tabular text-[11px] text-[var(--muted-soft)] shrink-0">#{no}</span>;
+}
+
 function SiparisSatir({
   s,
   h,
   ayRozeti,
   onDetay,
   onOdeme,
+  onUretimDegistir,
+  onFaturaDegistir,
+  telefon,
+  waMesaj,
+  onTelefonEksik,
 }: {
   s: Siparis;
   h: SiparisHesap;
   ayRozeti?: string;
   onDetay: () => void;
   onOdeme: () => void;
+  onUretimDegistir: (d: UretimDurumu) => void;
+  onFaturaDegistir: (v: boolean) => void;
+  telefon?: string;
+  waMesaj: string;
+  onTelefonEksik: () => void;
 }) {
   const uyari = tahsilatUyari(s, h);
   return (
     <tr className="kasa-row group">
       <td className="sabit-1 align-top">
-        <div className="px-2 py-1.5 flex items-center gap-1.5 min-w-0">
-          <FirmaLink firmaId={s.firmaId} ad={s.firmaAdi} className="font-medium truncate" />
-          <AyRozeti ay={ayRozeti} />
+        <div className="px-2 py-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <FirmaLink firmaId={s.firmaId} ad={s.firmaAdi} className="font-medium truncate" />
+            <AyRozeti ay={ayRozeti} />
+          </div>
+          <SiparisNoEtiketi no={s.siparisNo} />
         </div>
       </td>
       <td className="sabit-2 align-top">
@@ -727,7 +872,7 @@ function SiparisSatir({
       </td>
       <td className="align-top">
         <div className="py-1.5">
-          <UretimRozeti value={s.uretim} onChange={(d) => updateSiparis(s.id, { uretim: d })} />
+          <UretimRozeti value={s.uretim} onChange={onUretimDegistir} />
         </div>
       </td>
       <td className="align-top">
@@ -740,7 +885,7 @@ function SiparisSatir({
       </td>
       <td className="align-top">
         <div className="py-1.5">
-          <FaturaRozeti kesildi={s.fatura} onToggle={() => updateSiparis(s.id, { fatura: !s.fatura })} />
+          <FaturaRozeti kesildi={s.fatura} onChange={onFaturaDegistir} />
         </div>
       </td>
       <td className="align-top">
@@ -756,6 +901,7 @@ function SiparisSatir({
               Ödeme Al
             </button>
           )}
+          <WhatsappButonu telefon={telefon} mesaj={waMesaj} onTelefonEksik={onTelefonEksik} />
           <button className="icon-btn" onClick={onDetay} title="Detay, notlar ve silme">
             <MoreHorizontal className="w-4 h-4" />
           </button>
@@ -770,6 +916,8 @@ function TaslakSatir({
   firmalar,
   hesaplar,
   kartOnerileri,
+  siparisler,
+  onSiparisDetay,
   onChange,
   onSave,
   onKapat,
@@ -778,6 +926,8 @@ function TaslakSatir({
   firmalar: Firma[];
   hesaplar: BankaHesabi[];
   kartOnerileri: string[];
+  siparisler: Siparis[];
+  onSiparisDetay: (id: string) => void;
   onChange: (p: Partial<Taslak>) => void;
   onSave: () => void;
   onKapat: () => void;
@@ -816,6 +966,7 @@ function TaslakSatir({
         {!value.firmaId && value.firma.trim() && (
           <div className="px-2 text-[11px] text-[var(--accent-orange)]">Listeden seçin ya da ekleyin</div>
         )}
+        {value.firmaId && <SonSiparisler siparisler={siparisler} firmaId={value.firmaId} onSec={onSiparisDetay} />}
       </td>
       <td className="sabit-2 align-top">
         <input type="date" className="input-sm" tabIndex={-1} value={value.tarih} onChange={(e) => onChange({ tarih: e.target.value })} />
@@ -903,7 +1054,27 @@ function KartOnizleme({ id }: { id?: string }) {
   );
 }
 
-function SiparisKarti({ s, h, ayRozeti, onClick }: { s: Siparis; h: SiparisHesap; ayRozeti?: string; onClick: () => void }) {
+function SiparisKarti({
+  s,
+  h,
+  ayRozeti,
+  onClick,
+  onUretimDegistir,
+  onFaturaDegistir,
+  telefon,
+  waMesaj,
+  onTelefonEksik,
+}: {
+  s: Siparis;
+  h: SiparisHesap;
+  ayRozeti?: string;
+  onClick: () => void;
+  onUretimDegistir: (d: UretimDurumu) => void;
+  onFaturaDegistir: (v: boolean) => void;
+  telefon?: string;
+  waMesaj: string;
+  onTelefonEksik: () => void;
+}) {
   const uyari = tahsilatUyari(s, h);
   return (
     <div role="button" tabIndex={0} className="card p-3 flex gap-3 active:bg-[var(--surface-hover)]" onClick={onClick} onKeyDown={(e) => e.key === "Enter" && onClick()}>
@@ -914,6 +1085,7 @@ function SiparisKarti({ s, h, ayRozeti, onClick }: { s: Siparis; h: SiparisHesap
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="font-medium truncate">{s.firmaAdi}</span>
               <AyRozeti ay={ayRozeti} />
+              <SiparisNoEtiketi no={s.siparisNo} />
             </div>
             <div className="text-xs text-[var(--muted)] truncate">
               {s.urun || "—"} · <span className="tabular">{formatDate(s.tarih)}</span>
@@ -927,9 +1099,10 @@ function SiparisKarti({ s, h, ayRozeti, onClick }: { s: Siparis; h: SiparisHesap
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-          <UretimRozeti value={s.uretim} onChange={(d) => updateSiparis(s.id, { uretim: d })} />
+          <UretimRozeti value={s.uretim} onChange={onUretimDegistir} />
           <OdemeRozeti durum={odemeDurumu(s, h)} />
-          <FaturaRozeti kesildi={s.fatura} onToggle={() => updateSiparis(s.id, { fatura: !s.fatura })} />
+          <FaturaRozeti kesildi={s.fatura} onChange={onFaturaDegistir} />
+          <WhatsappButonu telefon={telefon} mesaj={waMesaj} onTelefonEksik={onTelefonEksik} />
         </div>
       </div>
     </div>

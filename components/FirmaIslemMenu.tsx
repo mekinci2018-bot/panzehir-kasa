@@ -40,6 +40,10 @@ export default function FirmaIslemMenu({
     [kayitlar, siparisler, firma.id]
   );
 
+  // Closing happens through a full-screen backdrop BEHIND the menu panel (click-based, like
+  // Rozetler.tsx), not a document-level pointerdown listener — that fired before the menu
+  // buttons' own click and closed the menu out from under them, so "Düzenle"/"Birleştir" etc.
+  // appeared to do nothing.
   useLayoutEffect(() => {
     if (!open) return;
     const yerlestir = () => {
@@ -47,20 +51,15 @@ export default function FirmaIslemMenu({
       if (r) setPos({ right: window.innerWidth - r.right, top: r.bottom + 4 });
     };
     yerlestir();
-    const kapat = (e: Event) => {
-      if (triggerRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-      setTurAcik(false);
+    const kacis = (e: KeyboardEvent) => {
+      if (e.key === "Escape") kapatMenu();
     };
-    const kacis = (e: KeyboardEvent) => e.key === "Escape" && kapat(e);
     window.addEventListener("scroll", yerlestir, true);
     window.addEventListener("resize", yerlestir);
-    document.addEventListener("pointerdown", kapat, true);
     document.addEventListener("keydown", kacis);
     return () => {
       window.removeEventListener("scroll", yerlestir, true);
       window.removeEventListener("resize", yerlestir);
-      document.removeEventListener("pointerdown", kapat, true);
       document.removeEventListener("keydown", kacis);
     };
   }, [open]);
@@ -110,11 +109,13 @@ export default function FirmaIslemMenu({
   const menu =
     open && pos
       ? createPortal(
-          <div
-            role="menu"
-            className="fixed z-[60] card shadow-[var(--shadow-pop)] py-1 w-[220px] text-sm"
-            style={{ right: pos.right, top: pos.top }}
-          >
+          <>
+            <div className="fixed inset-0 z-[59]" onClick={kapatMenu} />
+            <div
+              role="menu"
+              className="fixed z-[60] card shadow-[var(--shadow-pop)] py-1 w-[220px] text-sm"
+              style={{ right: pos.right, top: pos.top }}
+            >
             <button
               className="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-[var(--surface-hover)]"
               onClick={() => {
@@ -172,7 +173,8 @@ export default function FirmaIslemMenu({
             >
               <Trash2 className="w-3.5 h-3.5 text-[var(--muted)]" /> Sil
             </button>
-          </div>,
+            </div>
+          </>,
           document.body
         )
       : null;

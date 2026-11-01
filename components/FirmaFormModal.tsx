@@ -32,12 +32,15 @@ export function TurSecici({ value, onChange, size = "md" }: { value: FirmaTuru; 
 }
 
 // Add or edit a company. Editing is always passed `firma`; `varsayilanTur` only matters for "new".
+// `odaklan: "telefon"` opens with the phone field focused instead of the name (e.g. when opened
+// from a WhatsApp button because the company has no number yet).
 export default function FirmaFormModal({
   firma,
   varsayilanTur = "musteri",
   firmalar,
   bagliKayitlar,
   bagliSiparisIds,
+  odaklan = "ad",
   onClose,
 }: {
   firma?: Firma;
@@ -45,6 +48,7 @@ export default function FirmaFormModal({
   firmalar: Firma[];
   bagliKayitlar: KasaKaydi[];
   bagliSiparisIds: string[];
+  odaklan?: "ad" | "telefon";
   onClose: () => void;
 }) {
   const [ad, setAd] = useState(firma?.ad ?? "");
@@ -106,7 +110,7 @@ export default function FirmaFormModal({
           <label className="field-label">{tur === "gider" ? "Gider kalemi" : "Firma adı"}</label>
           <input
             className="input-field uppercase"
-            autoFocus
+            autoFocus={odaklan === "ad"}
             value={ad}
             onChange={(e) => {
               setAd(e.target.value);
@@ -124,7 +128,13 @@ export default function FirmaFormModal({
         {tur !== "gider" && (
           <div>
             <label className="field-label">Telefon</label>
-            <input className="input-field" value={telefon} onChange={(e) => setTelefon(e.target.value)} placeholder="Opsiyonel" />
+            <input
+              className="input-field"
+              autoFocus={odaklan === "telefon"}
+              value={telefon}
+              onChange={(e) => setTelefon(e.target.value)}
+              placeholder="Opsiyonel"
+            />
           </div>
         )}
         <div>

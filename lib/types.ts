@@ -54,6 +54,7 @@ export interface TahsilatNotu {
 
 export interface Siparis {
   id: string;
+  siparisNo?: number; // sequential, assigned once at creation (lib/db.ts addSiparis); absent on pre-migration orders until the backfill runs
   firmaId: string;
   firmaAdi: string; // display name, kept in step with the company on rename/merge
   tarih: string; // YYYY-MM-DD

@@ -178,89 +178,151 @@ export default function OutstandingList({
 
       <YazdirmaListesi kalemler={gorunen} ay={ay} tutarBasligi={amountLabel} ekranSirasi={!!sira} />
 
-      <div className="card overflow-hidden print:hidden">
-        {loading && items.length === 0 ? (
+      {loading && items.length === 0 ? (
+        <div className="card print:hidden">
           <YukleniyorSatiri />
-        ) : items.length === 0 ? (
+        </div>
+      ) : items.length === 0 ? (
+        <div className="card print:hidden">
           <EmptyState icon={icon} title={emptyTitle} description={emptyDescription} />
-        ) : gorunen.length === 0 ? (
-          <div className="px-5 py-8 text-sm text-center text-[var(--muted)]">{monthLabel(ay)} ve öncesinde açık kayıt yok.</div>
-        ) : (
-          <div className="table-scroll">
-            <table className="w-full text-sm data-table">
-              <thead>
-                <tr>
-                  <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="w-[110px]">Tarih</SiraTh>
-                  <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir}>Firma / Kişi</SiraTh>
-                  <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir}>Açıklama</SiraTh>
-                  <SiraTh sutun="vade" sira={sira} onSirala={siraDegistir} className="w-[150px]">Vade</SiraTh>
-                  <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[150px] text-right">{amountLabel}</SiraTh>
-                  <th className="w-[230px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {gorunen.map((k) => {
-                  const kalan = k.kalan;
-                  const durum = k.vade ? vadeDurumu(k.vade) : "normal";
-                  const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
-                  return (
-                    <tr key={k.key}>
-                      <td className="tabular">{formatDate(k.tarih)}</td>
-                      <td className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
-                          {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
-                          {!aydaMi(k.tarih, ay) && (
-                            <span className="badge bg-[#f1f1f4] text-[var(--muted)]" title="Önceki aydan kalan">
-                              Devreden · {kisaAyEtiketi(k.tarih, ay)}
-                            </span>
-                          )}
-                          {overdue && (
-                            <span className="badge badge-overdue">
-                              <AlertTriangle className="w-3 h-3" /> Gecikmiş
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="text-[var(--muted)]">{k.aciklama || "—"}</td>
-                      <td>
-                        {k.vade ? (
-                          <div className={VADE_RENK[durum]}>
-                            <div className="tabular">{formatDate(k.vade)}</div>
-                            <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : "font-medium"}`}>
-                              {vadeEtiketi(k.vade)}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-[var(--muted-soft)]">—</span>
+        </div>
+      ) : gorunen.length === 0 ? (
+        <div className="card px-5 py-8 text-sm text-center text-[var(--muted)] print:hidden">
+          {monthLabel(ay)} ve öncesinde açık kayıt yok.
+        </div>
+      ) : (
+        <>
+          {/* Phone: cards */}
+          <div className="md:hidden flex flex-col gap-2.5 print:hidden">
+            {gorunen.map((k) => {
+              const durum = k.vade ? vadeDurumu(k.vade) : "normal";
+              const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
+              return (
+                <div key={k.key} className="card p-3 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
+                        {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
+                        {!aydaMi(k.tarih, ay) && (
+                          <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Devreden · {kisaAyEtiketi(k.tarih, ay)}</span>
                         )}
-                      </td>
-                      <td className={`num font-medium ${VADE_RENK[durum]}`}>{formatTL(kalan)}</td>
-                      <td>
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            className="btn-primary !py-1.5 !px-3 !text-xs"
-                            onClick={() => (k.kayit ? setModalFor(k.kayit) : setSiparisFor(k))}
-                          >
-                            {actionLabel}
-                          </button>
-                          <button
-                            className="btn-secondary !py-1.5 !px-3 !text-xs"
-                            title="Kalan tutar kapatılır; cari ekstrede ayrı satır olarak görünür"
-                            onClick={() => (k.kayit ? arsiveGonder(k.kayit.id) : k.siparis && siparisKapat(k.siparis.id))}
-                          >
-                            Arşive Gönder
-                          </button>
+                        {overdue && (
+                          <span className="badge badge-overdue">
+                            <AlertTriangle className="w-3 h-3" /> Gecikmiş
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-[var(--muted)] truncate mt-0.5">{k.aciklama || "—"}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className={`tabular font-semibold text-sm ${VADE_RENK[durum]}`}>{formatTL(k.kalan)}</div>
+                      {k.vade ? (
+                        <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : `font-medium ${VADE_RENK[durum]}`}`}>
+                          {vadeEtiketi(k.vade)}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      ) : (
+                        <div className="text-[11px] text-[var(--muted-soft)] tabular">{formatDate(k.tarih)}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="btn-primary !py-1.5 !px-3 !text-xs flex-1"
+                      onClick={() => (k.kayit ? setModalFor(k.kayit) : setSiparisFor(k))}
+                    >
+                      {actionLabel}
+                    </button>
+                    <button
+                      className="btn-secondary !py-1.5 !px-3 !text-xs flex-1"
+                      onClick={() => (k.kayit ? arsiveGonder(k.kayit.id) : k.siparis && siparisKapat(k.siparis.id))}
+                    >
+                      Arşive Gönder
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block card overflow-hidden print:hidden">
+            <div className="table-scroll">
+              <table className="w-full text-sm data-table">
+                <thead>
+                  <tr>
+                    <SiraTh sutun="tarih" sira={sira} onSirala={siraDegistir} className="w-[110px]">Tarih</SiraTh>
+                    <SiraTh sutun="firma" sira={sira} onSirala={siraDegistir}>Firma / Kişi</SiraTh>
+                    <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir}>Açıklama</SiraTh>
+                    <SiraTh sutun="vade" sira={sira} onSirala={siraDegistir} className="w-[150px]">Vade</SiraTh>
+                    <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[150px] text-right">{amountLabel}</SiraTh>
+                    <th className="w-[230px]"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gorunen.map((k) => {
+                    const kalan = k.kalan;
+                    const durum = k.vade ? vadeDurumu(k.vade) : "normal";
+                    const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
+                    return (
+                      <tr key={k.key}>
+                        <td className="tabular">{formatDate(k.tarih)}</td>
+                        <td className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
+                            {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
+                            {!aydaMi(k.tarih, ay) && (
+                              <span className="badge bg-[#f1f1f4] text-[var(--muted)]" title="Önceki aydan kalan">
+                                Devreden · {kisaAyEtiketi(k.tarih, ay)}
+                              </span>
+                            )}
+                            {overdue && (
+                              <span className="badge badge-overdue">
+                                <AlertTriangle className="w-3 h-3" /> Gecikmiş
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-[var(--muted)]">{k.aciklama || "—"}</td>
+                        <td>
+                          {k.vade ? (
+                            <div className={VADE_RENK[durum]}>
+                              <div className="tabular">{formatDate(k.vade)}</div>
+                              <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : "font-medium"}`}>
+                                {vadeEtiketi(k.vade)}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-[var(--muted-soft)]">—</span>
+                          )}
+                        </td>
+                        <td className={`num font-medium ${VADE_RENK[durum]}`}>{formatTL(kalan)}</td>
+                        <td>
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              className="btn-primary !py-1.5 !px-3 !text-xs"
+                              onClick={() => (k.kayit ? setModalFor(k.kayit) : setSiparisFor(k))}
+                            >
+                              {actionLabel}
+                            </button>
+                            <button
+                              className="btn-secondary !py-1.5 !px-3 !text-xs"
+                              title="Kalan tutar kapatılır; cari ekstrede ayrı satır olarak görünür"
+                              onClick={() => (k.kayit ? arsiveGonder(k.kayit.id) : k.siparis && siparisKapat(k.siparis.id))}
+                            >
+                              Arşive Gönder
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       {modalFor && (
         <AmountModal
