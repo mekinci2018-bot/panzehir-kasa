@@ -2,26 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Building2, Link2, Merge, Pencil, Plus, Search, Wand2 } from "lucide-react";
+import { Building2, Link2, Merge, Plus, Search, Wand2 } from "lucide-react";
 import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaSiparisOzetleri, siparisOdemeleri } from "@/lib/siparis";
-import {
-  addFirma,
-  firmalariBirlestir,
-  FirmaZatenVar,
-  kayitlariFirmayaBagla,
-  kilitleriTamamla,
-  updateFirma,
-} from "@/lib/db";
+import { addFirma, FirmaZatenVar, kayitlariFirmayaBagla, kilitleriTamamla } from "@/lib/db";
 import { benzerFirmalar, cariOzetleri, FIRMA_TURU_LABEL, firmaAdiDuzenle, firmaAnahtari, firmaTuru } from "@/lib/firma";
 import { formatDate, formatTL } from "@/lib/format";
-import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "@/lib/types";
+import type { Firma, FirmaTuru } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 import BakiyeHucre from "@/components/BakiyeHucre";
 import { SiraTh } from "@/components/SiraBasligi";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
+import FirmaBirlestirModal from "@/components/FirmaBirlestirModal";
+import FirmaIslemMenu from "@/components/FirmaIslemMenu";
+import FirmaFormModal, { TurSecici } from "@/components/FirmaFormModal";
 
 const SEKMELER: { tur: FirmaTuru; label: string }[] = [
   { tur: "musteri", label: "Müşteriler" },
@@ -229,6 +225,7 @@ export default function FirmalarPage() {
                         <Link href={`/firmalar/${f.id}`} className="font-medium hover:underline underline-offset-2 decoration-[var(--border-strong)]">
                           {f.ad}
                         </Link>
+                        {f.pasif && <span className="badge bg-[#f1f1f4] text-[var(--muted)] ml-1.5">Pasif</span>}
                         {f.not && <div className="text-xs text-[var(--muted)] truncate max-w-md">{f.not}</div>}
                       </td>
                       {!gider && <td className="tabular text-[var(--muted)]">{f.telefon || "—"}</td>}
@@ -238,9 +235,15 @@ export default function FirmalarPage() {
                         {gider ? (o?.sonTarih ? formatDate(o.sonTarih) : "—") : so?.sonTarih ? formatDate(so.sonTarih) : "—"}
                       </td>
                       <td>
-                        <button className="icon-btn" onClick={() => setForm({ firma: f })} title="Düzenle">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end">
+                          <FirmaIslemMenu
+                            firma={f}
+                            firmalar={firmalar}
+                            kayitlar={tumKayitlar}
+                            siparisler={tumSiparisler}
+                            onEdit={() => setForm({ firma: f })}
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -270,7 +273,7 @@ export default function FirmalarPage() {
       )}
 
       {birlestir && seciliFirmalar.length === 2 && (
-        <BirlestirModal
+        <FirmaBirlestirModal
           firmalar={seciliFirmalar as [Firma, Firma]}
           kayitlar={tumKayitlar}
           siparisler={tumSiparisler}
@@ -281,25 +284,6 @@ export default function FirmalarPage() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function TurSecici({ value, onChange, size = "md" }: { value: FirmaTuru; onChange: (t: FirmaTuru) => void; size?: "sm" | "md" }) {
-  return (
-    <div className={`inline-flex rounded-[9px] border border-[var(--border-strong)] p-0.5 bg-[#f6f6f8] ${size === "sm" ? "text-xs" : "text-[13px]"}`}>
-      {SEKMELER.map((s) => (
-        <button
-          key={s.tur}
-          type="button"
-          className={`px-2.5 py-1 rounded-[7px] font-medium transition-colors ${
-            value === s.tur ? "bg-white shadow-sm text-[var(--foreground)]" : "text-[var(--muted)] hover:text-[var(--foreground)]"
-          }`}
-          onClick={() => onChange(s.tur)}
-        >
-          {FIRMA_TURU_LABEL[s.tur]}
-        </button>
-      ))}
     </div>
   );
 }
@@ -446,220 +430,4 @@ function Eslestirme({ gruplar, firmalar }: { gruplar: EslesmeyenGrup[]; firmalar
   );
 }
 
-function FirmaFormModal({
-  firma,
-  varsayilanTur,
-  firmalar,
-  bagliKayitlar,
-  bagliSiparisIds,
-  onClose,
-}: {
-  firma?: Firma;
-  varsayilanTur: FirmaTuru;
-  firmalar: Firma[];
-  bagliKayitlar: KasaKaydi[];
-  bagliSiparisIds: string[];
-  onClose: () => void;
-}) {
-  const [ad, setAd] = useState(firma?.ad ?? "");
-  const [tur, setTur] = useState<FirmaTuru>(firma ? firmaTuru(firma) : varsayilanTur);
-  const [telefon, setTelefon] = useState(firma?.telefon ?? "");
-  const [not, setNot] = useState(firma?.not ?? "");
-  const [benzerler, setBenzerler] = useState<Firma[] | null>(null);
-  const [hata, setHata] = useState<{ mesaj: string; firma?: Firma } | null>(null);
-  const [busy, setBusy] = useState(false);
 
-  async function kaydet(zorla = false) {
-    if (!firmaAnahtari(ad) || busy) return;
-    setHata(null);
-    // Expense items skip the near-duplicate check; an exact duplicate is still refused.
-    if (!firma && !zorla && tur !== "gider") {
-      const b = benzerFirmalar(ad, firmalar);
-      if (b.length > 0) {
-        setBenzerler(b);
-        return;
-      }
-    }
-    setBusy(true);
-    try {
-      if (firma) await updateFirma(firma, { ad, tur, telefon, not }, firmalar, bagliKayitlar, bagliSiparisIds);
-      else await addFirma(ad, firmalar, { tur, telefon, not });
-      onClose();
-    } catch (err) {
-      if (err instanceof FirmaZatenVar) setHata({ mesaj: "Bu adla bir kayıt zaten var:", firma: err.firma });
-      else {
-        console.error(err);
-        setHata({ mesaj: "Kaydedilemedi, lütfen tekrar deneyin." });
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-center justify-center z-50 p-4">
-      <form
-        className="card w-full max-w-md p-6 flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          kaydet(benzerler !== null);
-        }}
-      >
-        <h3 className="font-semibold text-base">{firma ? "Düzenle" : "Yeni firma"}</h3>
-        <div>
-          <label className="field-label">Tür</label>
-          <TurSecici
-            value={tur}
-            onChange={(t) => {
-              setTur(t);
-              setBenzerler(null);
-            }}
-          />
-        </div>
-        <div>
-          <label className="field-label">{tur === "gider" ? "Gider kalemi" : "Firma adı"}</label>
-          <input
-            className="input-field uppercase"
-            autoFocus
-            value={ad}
-            onChange={(e) => {
-              setAd(e.target.value);
-              setBenzerler(null);
-              setHata(null);
-            }}
-            placeholder={tur === "gider" ? "Örn. Kira, Elektrik, Yakıt" : "Firma adı"}
-          />
-          {firma && bagliKayitlar.length + bagliSiparisIds.length > 0 && firmaAdiDuzenle(ad) !== firma.ad && (
-            <p className="text-[11px] text-[var(--muted)] mt-1">
-              Bağlı {bagliKayitlar.length} kayıt ve {bagliSiparisIds.length} siparişteki ad da güncellenecek.
-            </p>
-          )}
-        </div>
-        {tur !== "gider" && (
-          <div>
-            <label className="field-label">Telefon</label>
-            <input className="input-field" value={telefon} onChange={(e) => setTelefon(e.target.value)} placeholder="Opsiyonel" />
-          </div>
-        )}
-        <div>
-          <label className="field-label">Not</label>
-          <input className="input-field" value={not} onChange={(e) => setNot(e.target.value)} placeholder="Opsiyonel" />
-        </div>
-
-        {benzerler && (
-          <div className="rounded-[10px] bg-[var(--accent-orange-soft)] px-4 py-3 text-sm">
-            <div className="font-medium text-[var(--accent-orange)] mb-1.5">Bunu mu demek istediniz?</div>
-            <ul className="flex flex-col gap-1">
-              {benzerler.map((b) => (
-                <li key={b.id}>
-                  <Link href={`/firmalar/${b.id}`} className="font-medium hover:underline">
-                    {b.ad}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <p className="text-xs text-[var(--muted)] mt-2">Farklı bir firmaysa &ldquo;Yine de ekle&rdquo; ile devam edin.</p>
-          </div>
-        )}
-        {hata && (
-          <div className="rounded-[10px] bg-[var(--brand-soft)] px-4 py-3 text-sm text-[var(--brand-dark)]">
-            {hata.mesaj}{" "}
-            {hata.firma && (
-              <Link href={`/firmalar/${hata.firma.id}`} className="font-semibold hover:underline">
-                {hata.firma.ad}
-              </Link>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-2 mt-2 justify-end">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Vazgeç
-          </button>
-          <button type="submit" className="btn-primary disabled:opacity-40" disabled={busy || !firmaAnahtari(ad)}>
-            {benzerler ? "Yine de ekle" : "Kaydet"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function BirlestirModal({
-  firmalar,
-  kayitlar,
-  siparisler,
-  onClose,
-  onDone,
-}: {
-  firmalar: [Firma, Firma];
-  kayitlar: KasaKaydi[];
-  siparisler: Siparis[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [hedefId, setHedefId] = useState(firmalar[0].id);
-  const [busy, setBusy] = useState(false);
-  const hedef = firmalar.find((f) => f.id === hedefId)!;
-  const kaynak = firmalar.find((f) => f.id !== hedefId)!;
-  const sayi = (id: string) =>
-    kayitlar.filter((k) => k.firmaId === id).length + siparisler.filter((s) => s.firmaId === id).length;
-
-  async function birlestir() {
-    setBusy(true);
-    try {
-      await firmalariBirlestir(
-        kaynak,
-        hedef,
-        kayitlar.filter((k) => k.firmaId === kaynak.id).map((k) => k.id),
-        siparisler.filter((s) => s.firmaId === kaynak.id).map((s) => s.id)
-      );
-      onDone();
-    } catch (err) {
-      console.error(err);
-      alert("Birleştirilemedi, lütfen tekrar deneyin.");
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-center justify-center z-50 p-4">
-      <div className="card w-full max-w-md p-6 flex flex-col gap-4">
-        <h3 className="font-semibold text-base">Birleştir</h3>
-        <p className="text-sm text-[var(--muted)]">Hangisi kalsın?</p>
-        <div className="flex flex-col gap-2">
-          {firmalar.map((f) => (
-            <label
-              key={f.id}
-              className={`flex items-center justify-between gap-3 rounded-[10px] border px-4 py-3 cursor-pointer transition-colors ${
-                f.id === hedefId ? "border-[var(--ink)] bg-[#f6f6f9]" : "border-[var(--border-strong)]"
-              }`}
-            >
-              <span className="flex items-center gap-3 min-w-0">
-                <input type="radio" className="accent-[var(--ink)]" checked={f.id === hedefId} onChange={() => setHedefId(f.id)} />
-                <span className="font-medium truncate">{f.ad}</span>
-              </span>
-              <span className="text-xs text-[var(--muted)] shrink-0">{sayi(f.id)} kayıt</span>
-            </label>
-          ))}
-        </div>
-        <div className="rounded-[10px] bg-[var(--brand-soft)] px-4 py-3 text-sm text-[var(--brand-dark)]">
-          <strong>{kaynak.ad}</strong> altındaki {sayi(kaynak.id)} kayıt ve sipariş <strong>{hedef.ad}</strong> altına aktarılacak ve{" "}
-          <strong>{kaynak.ad}</strong> silinecek. Bu işlem geri alınamaz.
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button className="btn-secondary" onClick={onClose}>
-            Vazgeç
-          </button>
-          <button
-            className="btn-primary !bg-[var(--brand)] hover:!bg-[var(--brand-dark)] disabled:opacity-40"
-            disabled={busy}
-            onClick={birlestir}
-          >
-            Evet, birleştir
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

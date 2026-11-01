@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, FileText } from "lucide-react";
 import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
+import FirmaIslemMenu from "@/components/FirmaIslemMenu";
+import FirmaFormModal from "@/components/FirmaFormModal";
 import { useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler, kartOnerileri } from "@/lib/hooks";
 import { siparisOdemeleri } from "@/lib/siparis";
 import SiparisDetayModal from "@/components/SiparisDetayModal";
@@ -73,12 +75,16 @@ function DevredenSatiri({ tarih, bakiye }: { tarih: string; bakiye: number }) {
 
 export default function CariEkstrePage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { firmalar, loading: firmaLoading } = useFirmalar();
-  const { kayitlar, loading } = useKasaKayitlari();
+  const { kayitlar, silinenler: silinenKayitlar, loading } = useKasaKayitlari();
   const { hesaplar } = useBankaHesaplari();
-  const { siparisler } = useSiparisler();
+  const { siparisler, silinenler: silinenSiparisler } = useSiparisler();
+  const tumKayitlar = useMemo(() => [...kayitlar, ...silinenKayitlar], [kayitlar, silinenKayitlar]);
+  const tumSiparisler = useMemo(() => [...siparisler, ...silinenSiparisler], [siparisler, silinenSiparisler]);
   const [detayId, setDetayId] = useState<string | null>(null);
   const [siparisDetayId, setSiparisDetayId] = useState<string | null>(null);
+  const [duzenle, setDuzenle] = useState(false);
   const [aralik, setAralik] = useState<{ tur: AralikTuru; bas: string; bit: string }>({ tur: "tumu", bas: "", bit: "" });
   const aralikta = (tarih: string) => (!aralik.bas || tarih >= aralik.bas) && (!aralik.bit || tarih <= aralik.bit);
   const { sira, sirala: siraDegistir } = useSiralama("ekstre");
@@ -169,13 +175,36 @@ export default function CariEkstrePage() {
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Firmalar
           </Link>
-          <h1 className="text-[26px] font-semibold tracking-[-0.02em]">{firma.ad}</h1>
+          <h1 className="text-[26px] font-semibold tracking-[-0.02em] flex items-center gap-2">
+            {firma.ad}
+            {firma.pasif && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Pasif</span>}
+          </h1>
           <p className="text-sm text-[var(--muted)]">
             {[FIRMA_TURU_LABEL[firmaTuru(firma)], firma.telefon, firma.not].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <YazdirButonu dosyaAdi={`${gider ? "Harcama Dökümü" : "Cari Ekstre"} - ${firma.ad}`} />
+        <div className="flex items-center gap-1.5 print:hidden">
+          <YazdirButonu dosyaAdi={`${gider ? "Harcama Dökümü" : "Cari Ekstre"} - ${firma.ad}`} />
+          <FirmaIslemMenu
+            firma={firma}
+            firmalar={firmalar}
+            kayitlar={tumKayitlar}
+            siparisler={tumSiparisler}
+            onEdit={() => setDuzenle(true)}
+            onDeleted={() => router.push("/firmalar")}
+          />
+        </div>
       </div>
+
+      {duzenle && (
+        <FirmaFormModal
+          firma={firma}
+          firmalar={firmalar}
+          bagliKayitlar={firmaKayitlari}
+          bagliSiparisIds={firmaSiparisleri.map((s) => s.id)}
+          onClose={() => setDuzenle(false)}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-2 print:hidden">
         <div className="inline-flex rounded-[9px] border border-[var(--border-strong)] p-0.5 bg-[#f6f6f8] text-[13px]">

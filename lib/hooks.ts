@@ -143,9 +143,12 @@ export function useSiparisler() {
 
 const firmaSirala = (v: Firma[]) => v.sort((a, b) => a.ad.localeCompare(b.ad, "tr"));
 
+// Soft-deleted companies (no records left, removed with confirmation) are split off here too.
 export function useFirmalar() {
   const { veri, loading } = useKoleksiyon<Firma>(FIRMALAR, () => collection(getDb(), FIRMALAR), firmaSirala);
-  return { firmalar: veri, loading };
+  const firmalar = useMemo(() => veri.filter((f) => !f.silindi), [veri]);
+  const silinenler = useMemo(() => veri.filter((f) => f.silindi), [veri]);
+  return { firmalar, silinenler, loading };
 }
 
 export function useBankaHesaplari() {

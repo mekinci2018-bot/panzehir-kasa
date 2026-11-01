@@ -123,6 +123,11 @@ export interface Firma {
   kilitli?: boolean; // its firmaAdlari lock document exists
   telefon?: string;
   not?: string;
+  pasif?: boolean; // hidden from new-record pickers; existing records keep showing it
+  // Soft delete: only possible when the company has no records. Kept in Çöp Kutusu and
+  // excluded from every list; its firmaAdlari lock is removed so the name is free again.
+  silindi?: boolean;
+  silinmeTarihi?: number;
   createdAt: number;
   updatedAt: number;
 }

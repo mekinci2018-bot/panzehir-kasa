@@ -299,6 +299,54 @@ export async function firmalariBirlestir(kaynak: Firma, hedef: Firma, kaynakKayi
   });
 }
 
+export async function firmaTuruDegistir(firma: Firma, tur: FirmaTuru) {
+  await ensureSignedIn();
+  return updateDoc(doc(getDb(), FIRMALAR, firma.id), { tur, updatedAt: Date.now() });
+}
+
+// Hidden from new-record pickers (FirmaSecici); existing records keep showing it everywhere else.
+export async function firmaPasifYap(id: string, pasif: boolean) {
+  await ensureSignedIn();
+  return updateDoc(doc(getDb(), FIRMALAR, id), { pasif, updatedAt: Date.now() });
+}
+
+// Only safe when the company has no kayıt/sipariş left (checked by the caller): soft-delete and free
+// up its name lock immediately, so it can be re-added right away if it was created by mistake.
+export async function firmaSil(firma: Firma) {
+  await ensureSignedIn();
+  const now = Date.now();
+  await runTransaction(getDb(), async (tx) => {
+    const kilitRef = doc(getDb(), FIRMA_ADLARI, firma.anahtar);
+    const kilit = await tx.get(kilitRef);
+    if (kilit.exists() && kilit.data().firmaId === firma.id) tx.delete(kilitRef);
+    tx.update(doc(getDb(), FIRMALAR, firma.id), {
+      silindi: true,
+      silinmeTarihi: now,
+      kilitli: false,
+      updatedAt: now,
+    });
+  });
+}
+
+// Restores from Çöp Kutusu. If the name was taken by another company in the meantime, it comes back
+// unlocked (visible, editable) rather than failing outright.
+export async function firmaGeriYukle(firma: Firma) {
+  await ensureSignedIn();
+  const now = Date.now();
+  await runTransaction(getDb(), async (tx) => {
+    const kilitRef = doc(getDb(), FIRMA_ADLARI, firma.anahtar);
+    const kilit = await tx.get(kilitRef);
+    const serbest = !kilit.exists();
+    if (serbest) tx.set(kilitRef, { firmaId: firma.id });
+    tx.update(doc(getDb(), FIRMALAR, firma.id), {
+      silindi: deleteField(),
+      silinmeTarihi: deleteField(),
+      kilitli: serbest,
+      updatedAt: now,
+    });
+  });
+}
+
 // ---- Siparişler ----
 
 export type OdemeGirdisi = {

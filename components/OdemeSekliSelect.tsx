@@ -10,7 +10,11 @@ export interface OdemeSecimi {
   kartAciklama: string; // "" when none; only for kart
 }
 
+// The account holder's name leads (so "MUSTAFA EKİNCİ" is what's recognized at a glance); the bank
+// name follows as context. Falls back to the bank/IBAN when no holder name was entered.
 export function hesapEtiketi(h: BankaHesabi): string {
+  const sahip = h.hesapSahibi?.trim();
+  if (sahip) return h.banka ? `${sahip} · ${h.banka}` : sahip;
   return h.aciklama ? `${h.banka} · ${h.aciklama}` : h.banka || h.iban;
 }
 

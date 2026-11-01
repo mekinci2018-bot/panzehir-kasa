@@ -70,8 +70,9 @@ export default function FirmaSecici({
     }
     const uyan = (ad: string) => !anahtar || firmaAnahtari(ad).includes(anahtar);
     const once = (ad: string) => Number(!firmaAnahtari(ad).startsWith(anahtar));
+    // Pasif firmalar yeni kayıtlarda önerilmez; zaten seçili olan (var olan bir kayıt açılmışsa) görünmeye devam eder.
     const firmaList: Secenek[] = firmalar
-      .filter((f) => uyan(f.ad))
+      .filter((f) => uyan(f.ad) && (!f.pasif || f.id === value.firmaId))
       .sort((a, b) => once(a.ad) - once(b.ad))
       .slice(0, LISTE_LIMIT)
       .map((firma) => ({ tur: "firma", firma }));
@@ -82,7 +83,7 @@ export default function FirmaSecici({
     const yeni: Secenek[] =
       anahtar && !tamFirma && !tamPersonel ? YENI_TURLER.map((t) => ({ tur: "yeni", firmaTuru: t })) : [];
     return [...firmaList, ...personelList, ...yeni];
-  }, [benzer, anahtar, firmalar, calisanlar, tamFirma, tamPersonel]);
+  }, [benzer, anahtar, firmalar, calisanlar, tamFirma, tamPersonel, value.firmaId]);
 
   // The list is portaled to <body> with fixed coordinates, so table scroll areas and modals don't clip it.
   useLayoutEffect(() => {

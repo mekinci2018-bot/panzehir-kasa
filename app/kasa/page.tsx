@@ -127,27 +127,6 @@ export default function KasaPage() {
     return kayitlar.filter((k) => isoDayOf(k.createdAt) === bugun).sort((a, b) => b.createdAt - a.createdAt);
   }, [kayitlar]);
 
-  const alacaklar = useMemo(() => {
-    const list: OnizlemeKalemi[] = kayitlar
-      .filter((k) => k.yon === "gelen" && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
-      .map(kalemOf);
-    for (const s of siparisler) {
-      const { kalan } = siparisHesap(s, odemeler);
-      if (kalan > 0) list.push({ id: s.id, tarih: s.tarih, firma: s.firmaAdi, firmaId: s.firmaId, aciklama: s.urun, kalan, siparis: true });
-    }
-    return list.sort((a, b) => (a.tarih < b.tarih ? 1 : -1)).slice(0, 5);
-  }, [kayitlar, siparisler, odemeler]);
-
-  const borclar = useMemo(
-    () =>
-      kayitlar
-        .filter((k) => k.yon === "giden" && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
-        .map(kalemOf)
-        .sort((a, b) => (a.tarih < b.tarih ? 1 : -1))
-        .slice(0, 5),
-    [kayitlar]
-  );
-
   const detay = detayId ? kayitlar.find((k) => k.id === detayId) : undefined;
 
   function bildirimGoster(id: string, draft: DraftKayit) {
@@ -219,61 +198,6 @@ export default function KasaPage() {
         showGreeting
       />
 
-      <div className="card overflow-hidden">
-        <div className="table-scroll">
-          <table className="w-full text-sm data-table">
-            <thead>
-              <tr>
-                <th>Firma / Açıklama</th>
-                <th className="w-[140px]">Tarih</th>
-                <th className="w-[130px] text-right">Toplam Tutar</th>
-                <th className="w-[280px]">Ödeme Şekli</th>
-                <th className="w-[100px]">İşlem</th>
-                <th className="w-[130px] text-right" title="Kalan tutar otomatik olarak Alacaklar/Borçlar'a düşer">
-                  Peşin Ödenen
-                </th>
-                <th className="w-[52px]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {drafts.map((s) => (
-                <KayitRow
-                  key={`draft-${s.key}`}
-                  value={s.value}
-                  hesaplar={hesaplar}
-                  firmalar={firmalar}
-                  calisanlar={calisanlar}
-                  cariOzet={cariOzetMetni(s.value)}
-                  kartOnerileri={oneriler}
-                  onSave={() => saveDraft(s.key)}
-                  onChange={(patch) => updateDraft(s.key, patch)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-5 py-2.5 border-t border-[var(--border)] text-[11px] text-[var(--muted-soft)]">
-          Peşin ödenmeyen kısım otomatik olarak Alacaklar / Borçlar&apos;a düşer.
-        </div>
-      </div>
-
-      <BugunGirilenler items={bugunGirilenler} loading={loading} hesaplar={hesaplar} onSelect={setDetayId} />
-
-      <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold">Aylık kasa özeti</h2>
-          <MonthNav monthKey={ozetAyi} onChange={setOzetAyi} />
-        </div>
-        <div className="py-2">
-          <AyKasaOzeti ay={ozetAyi} donem={ayDonemi} />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <PreviewList title="Alacaklar" href="/alacaklar" items={alacaklar} tone="orange" />
-        <PreviewList title="Borçlar" href="/verecekler" items={borclar} tone="red" />
-      </div>
-
       <StatStrip
         items={[
           {
@@ -315,6 +239,56 @@ export default function KasaPage() {
           },
         ]}
       />
+
+      <div className="card overflow-hidden">
+        <div className="px-5 py-3 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">Aylık kasa özeti</h2>
+          <MonthNav monthKey={ozetAyi} onChange={setOzetAyi} />
+        </div>
+        <div className="py-2">
+          <AyKasaOzeti ay={ozetAyi} donem={ayDonemi} />
+        </div>
+      </div>
+
+      <div className="card overflow-hidden">
+        <div className="table-scroll">
+          <table className="w-full text-sm data-table">
+            <thead>
+              <tr>
+                <th>Firma / Açıklama</th>
+                <th className="w-[140px]">Tarih</th>
+                <th className="w-[130px] text-right">Toplam Tutar</th>
+                <th className="w-[280px]">Ödeme Şekli</th>
+                <th className="w-[100px]">İşlem</th>
+                <th className="w-[130px] text-right" title="Kalan tutar otomatik olarak Alacaklar/Borçlar'a düşer">
+                  Peşin Ödenen
+                </th>
+                <th className="w-[52px]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((s) => (
+                <KayitRow
+                  key={`draft-${s.key}`}
+                  value={s.value}
+                  hesaplar={hesaplar}
+                  firmalar={firmalar}
+                  calisanlar={calisanlar}
+                  cariOzet={cariOzetMetni(s.value)}
+                  kartOnerileri={oneriler}
+                  onSave={() => saveDraft(s.key)}
+                  onChange={(patch) => updateDraft(s.key, patch)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-2.5 border-t border-[var(--border)] text-[11px] text-[var(--muted-soft)]">
+          Peşin ödenmeyen kısım otomatik olarak Alacaklar / Borçlar&apos;a düşer.
+        </div>
+      </div>
+
+      <BugunGirilenler items={bugunGirilenler} loading={loading} hesaplar={hesaplar} onSelect={setDetayId} />
 
       {detay && (
         <KayitDetayModal
@@ -419,70 +393,3 @@ function BugunGirilenler({
   );
 }
 
-interface OnizlemeKalemi {
-  id: string;
-  tarih: string;
-  firma: string;
-  firmaId?: string;
-  personelId?: string;
-  aciklama: string;
-  kalan: number;
-  siparis?: boolean;
-}
-
-function kalemOf(k: KasaKaydi): OnizlemeKalemi {
-  return {
-    id: k.id,
-    tarih: k.tarih,
-    firma: k.firma,
-    firmaId: k.firmaId,
-    personelId: k.personelId,
-    aciklama: k.aciklama,
-    kalan: k.toplamTutar - k.alinanTutar,
-  };
-}
-
-function PreviewList({
-  title,
-  href,
-  items,
-  tone,
-}: {
-  title: string;
-  href: string;
-  items: OnizlemeKalemi[];
-  tone: "orange" | "red";
-}) {
-  return (
-    <div className="card p-5">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <Link href={href} className="text-xs text-[var(--muted)] font-medium hover:text-[var(--foreground)]">
-          Tümünü gör →
-        </Link>
-      </div>
-      {items.length === 0 ? (
-        <p className="text-sm text-[var(--muted)] py-2">Şu an bekleyen kayıt yok.</p>
-      ) : (
-        <ul className="flex flex-col divide-y divide-[var(--border)]">
-          {items.map((k) => (
-            <li key={k.id} className="py-2.5 flex items-center justify-between gap-4 text-sm">
-              <div className="min-w-0">
-                <span className="block truncate"><FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" /></span>
-                <div className="text-xs text-[var(--muted)] truncate">
-                  {k.siparis && <span className="text-[var(--accent-blue)] font-medium">Sipariş · </span>}
-                  {k.aciklama || "—"}
-                </div>
-              </div>
-              <div
-                className={`num font-medium ${tone === "orange" ? "text-[var(--accent-orange)]" : "text-[var(--brand)]"}`}
-              >
-                {formatTL(k.kalan)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}

@@ -1,6 +1,21 @@
 # Devam notları
 
-Son güncelleme: 31.10.2026
+Son güncelleme: 02.11.2026
+
+## 02.11.2026'da yapılanlar
+
+### Vercel dağıtımı düzeldi
+- Sorun `CRON_SECRET` ortam değişkenindeki baştaki/sondaki boşluktu; değer düzeltilince build geçti. Son dağıtım **Hazır**, canlı site güncel.
+
+### Veri düzeltmesi: Ekim 2026 üretim durumu (canlı veride)
+- Ekim 2026 tarihli, "Bitti" durumundaki 169 sipariş "Teslim Edildi" yapıldı (Kasım ve sonrasına dokunulmadı).
+- Önce/sonra: Bitti 169→0, Teslim Edildi 5→174, Teslim Edildi · Parası Alınmadı 1→28 (taşınan siparişlerden 27'sinin kalan ödemesi var — beklenen durum, ödeme durumu değişmedi).
+- `scripts/siparis-ekim-teslim.mjs`: Kuru çalıştırma varsayılan; `--yaz` ile uygular. Her çalıştırmada önce `siparisler` koleksiyonunun tam yedeğini `import/` klasörüne alır. PIN'i terminalde sorar (`.env.local` CRLF satır sonlarına karşı dayanıklı okunuyor).
+
+### Kod (localhost'ta test edildi, onaylandı)
+- **Kasa sayfası düzeni:** Özet şeridi ve Aylık kasa özeti en üstte (başlığın altında), giriş formu ve Bugün girilenler altta. Sayfa sonundaki Alacaklar/Borçlar önizleme kutuları kaldırıldı (kendi sayfaları var).
+- **Banka havalesi gösterimi:** `hesapEtiketi()` artık önce hesap sahibinin adını, yanında bankayı gösteriyor ("MUSTAFA EKİNCİ · KuveytTürk") — Kasa, Arşiv, Ödeme Al/Yap, Sipariş detayı ve Banka Hesapları kartlarının hepsinde ortak. Banka Hesapları kart başlığı da buna göre değişti. Not: "Banka Havalesi" seçilince açılan kutu tarayıcının kendi `<select>`'i olduğu için sıralama düzeldi ama banka adını küçük/soluk gösteremiyor (istenirse özel açılır liste yapılabilir — B raporunda bekliyor).
+- **Firma silme/düzenleme:** Firmalar listesinde ve firma ekstresinde "⋯" menüsü (Düzenle, Türünü değiştir, Birleştir, Sil). Kaydı olmayan firma onaylanınca Çöp Kutusu'na gidiyor (30 gün, geri alınabilir, adı anında serbest kalıyor). Kaydı olan firma doğrudan silinemiyor; Birleştir ya da Pasif yap seçeneği sunuluyor (pasif firmalar yeni kayıtlarda çıkmıyor, geçmişte görünmeye devam ediyor).
 
 ## 31.10.2026'da yapılanlar
 
@@ -50,18 +65,14 @@ Son güncelleme: 31.10.2026
 6. **Sipariş detayı → Sipariş Formu:** Önizlemede sadece form görünmeli. Büyük görsel, açıklama ve "Teslim alan / İmza" alanı olmalı.
 
 ## Bekleyen işler
-- **Vercel doğrulaması:**
-  - Vercel her yeniden dağıtımda **mekinci2018@gmail.com** adresine kod istiyor. Posta kutusu dolu olduğu için kod gelmiyor.
-  - Önce Gmail'de yer açın: one.google.com/storage, Çöp Kutusu, Spam ve `larger:10M` aramasıyla bulunan büyük ekler.
-  - Sonra Vercel → Deployments → en üst satır → ⋯ → Redeploy → gelen kodu girin.
-  - Canlıda en son çalışan sürüm `78f9c56`. Ondan sonraki dağıtımlar derleme başlamadan hata verdi. Kodun değişkenler olmadan da derlendiği yerelde doğrulandı.
 - **Google Drive otomatik yedek:**
   - Google tarafı hazır: Drive API açık, onay ekranı "In production", OAuth istemcisi ve yenileme jetonu alındı.
   - Vercel'e beş değişken girildi. `FIREBASE_SERVICE_ACCOUNT` tek satırlık (base64) biçimde.
-  - Yeniden dağıtımdan sonra yapılacaklar: Ayarlar → **Şimdi Yedek Al**, ardından Vercel → Settings → Cron Jobs → **Run**.
+  - Vercel dağıtımı artık Hazır olduğuna göre test edilebilir: Ayarlar → **Şimdi Yedek Al**, ardından Vercel → Settings → Cron Jobs → **Run**.
   - Test başarılı olunca Google Cloud'da client secret'ı yenileyin, çünkü ekran görüntüsüyle sohbete düştü. Yollar: Clients → Panzehir Yedek → Add secret → eskisini Disable ve Delete. Sonra Vercel'de `GOOGLE_CLIENT_SECRET` değerini güncelleyin.
-- **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` dosyası Geri Dönüşüm Kutusu'nda duruyor. Yedek ve aktarım betikleri bu dosyayı kullanıyor. İşi bitince kalıcı olarak silinmeli.
+- **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` dosyası Geri Dönüşüm Kutusu'nda duruyordu; sahibi iş bilgisayarında kalıcı olarak silecek.
 - **Excel yedeği isteği:** Gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenebilir (`exceljs` zaten kurulu).
+- **Banka Havalesi açılır listesi:** İstenirse hesap sahibi/banka adını özel tasarım bir açılır liste ile (küçük/soluk banka adı) göstermek — tarayıcının native `<select>`'i buna izin vermiyor.
 
 ## Yedekler (`import/`, git'e girmez)
 - `yedek-ONCESI-2026-10-31.json` ve `yedek-ONCESI-2026-10-31-aktarim-oncesi.json`: Excel aktarımından önceki deneme verisi.

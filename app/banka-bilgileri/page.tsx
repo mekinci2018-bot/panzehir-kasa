@@ -345,11 +345,11 @@ function HesapKarti({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="font-semibold truncate flex items-center gap-2">
-              {hesap.banka || "Banka"}
+              {hesap.hesapSahibi || hesap.banka || "Hesap"}
               {hesap.pasif && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Pasif</span>}
             </div>
             <div className="text-xs text-[var(--muted)] truncate">
-              {[hesap.hesapSahibi, hesap.aciklama].filter(Boolean).join(" · ") || "—"}
+              {[hesap.hesapSahibi ? hesap.banka : null, hesap.aciklama].filter(Boolean).join(" · ") || "—"}
             </div>
           </div>
           <div className="text-right shrink-0">

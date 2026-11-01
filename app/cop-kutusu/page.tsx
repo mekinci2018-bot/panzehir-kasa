@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
-import { useKasaKayitlari, useSiparisler } from "@/lib/hooks";
-import { kayitGeriYukle, siparisGeriYukle } from "@/lib/db";
+import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import { firmaGeriYukle, kayitGeriYukle, siparisGeriYukle } from "@/lib/db";
+import { FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
@@ -40,7 +41,16 @@ const COP_SUTUNLARI: SiraSutunlari<CopKalemi> = {
 export default function CopKutusuPage() {
   const { silinenler: silinenKayitlar, loading } = useKasaKayitlari();
   const { silinenler: silinenSiparisler } = useSiparisler();
+  const { silinenler: silinenFirmalar } = useFirmalar();
   const [simdi] = useState(() => Date.now());
+
+  const firmaKalemleri = useMemo(
+    () =>
+      silinenFirmalar
+        .filter((f) => (f.silinmeTarihi ?? 0) >= simdi - SAKLAMA_GUN * GUN_MS)
+        .sort((a, b) => (b.silinmeTarihi ?? 0) - (a.silinmeTarihi ?? 0)),
+    [silinenFirmalar, simdi]
+  );
 
   // Older deletions stay in the database but are no longer offered for restore.
   const items = useMemo(() => {
@@ -154,6 +164,52 @@ export default function CopKutusuPage() {
           </div>
         )}
       </div>
+
+      {firmaKalemleri.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-[var(--border)]">
+            <h2 className="text-sm font-semibold">Silinen Firmalar</h2>
+          </div>
+          <div className="table-scroll">
+            <table className="w-full text-sm data-table">
+              <thead>
+                <tr>
+                  <th>Firma</th>
+                  <th className="w-[140px]">Tür</th>
+                  <th className="w-[130px]">Silinme</th>
+                  <th className="w-[120px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {firmaKalemleri.map((f) => {
+                  const silinmeTarihi = f.silinmeTarihi ?? 0;
+                  const kalanGun = Math.max(0, SAKLAMA_GUN - Math.floor((simdi - silinmeTarihi) / GUN_MS));
+                  return (
+                    <tr key={f.id}>
+                      <td className="font-medium">{f.ad}</td>
+                      <td className="text-[var(--muted)]">{FIRMA_TURU_LABEL[firmaTuru(f)]}</td>
+                      <td>
+                        <div className="tabular">{new Date(silinmeTarihi).toLocaleDateString("tr-TR")}</div>
+                        <div className="text-[11px] text-[var(--muted)]">{kalanGun} gün kaldı</div>
+                      </td>
+                      <td>
+                        <div className="flex justify-end">
+                          <button
+                            className="btn-secondary !py-1.5 !px-3 !text-xs inline-flex items-center gap-1.5"
+                            onClick={() => firmaGeriYukle(f)}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Geri al
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
