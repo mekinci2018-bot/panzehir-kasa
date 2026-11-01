@@ -1,8 +1,18 @@
 # Devam notları
 
-Son güncelleme: 02.11.2026
+Son güncelleme: 02.11.2026 (ikinci tur, test edildi ve commit edildi)
 
-## 02.11.2026'da yapılanlar
+## 02.11.2026'da yapılanlar (ikinci tur, localhost'ta test edildi, onaylandı)
+
+- **Daha çok satır görünsün:** Siparişler, Arşiv, Alacaklar, Borçlar artık ekranın kalan yüksekliğini dolduruyor; sayfa kaymıyor, sadece tablo kendi içinde kayıyor (sticky başlık ve Siparişler'in çift kaydırma çubuğu duruyor). Satır/hücre iç boşlukları küçültüldü. Mekanizma: `app/layout.tsx`'te kaydırma `<body>`'den `<main>`'e taşındı; bu 4 sayfanın kökünde `.sayfa-dolu`, tablo alanında `.tablo-doldur` sınıfı var (`globals.css`).
+- **Siparişler varsayılan sekme:** Sayfaya her girişte "Tümü" ve bu ay açılıyor; sekme seçimi artık localStorage'da tutulmuyor, sadece sayfadayken korunuyor. Boş sekmede "Tümünü göster" bağlantısı eklendi.
+- **Logo → Kasa:** Sol üstteki logo (masaüstü ve mobil menü) tıklanınca Kasa'ya gidiyor; PIN ekranındaki logo tıklanamaz kalıyor.
+- **Fatura basitleştirildi:** Fatura sütunu tablodan, "Faturası Kesilmeyen" sekmesi, yazdırma çıktıları ve mobil kartlardan kaldırıldı (veri silinmedi). Ayarlar → "Fatura takibini göster" (varsayılan kapalı) açılırsa sipariş detayında küçük bir "Fatura kesildi" onay kutusu görünüyor.
+- **Yazı imleci:** Düzenlenemeyen metinlerde (başlık, rakam vb.) artık yanıp sönen imleç görünmüyor; sadece input/textarea'da görünüyor (`globals.css`, `caret-color`).
+- **Firmalar → telefon:**
+  - Telefon sütunu doğrudan listede düzenlenebiliyor (Enter kaydeder, Tab bir alttaki firmaya geçer).
+  - "Toplu telefon ekle" butonu: Excel'den iki sütun (Firma, Telefon) yapıştırma ya da CSV seçme (Google Kişiler dahil), firma adı otomatik eşleştirme, önizleme (eşleşen / eşleşmeyen / zaten telefonu olan — üzerine yazma onayı ile), toplu kaydetme.
+  - Telefonlar hangi biçimde girilirse girilsin ("0532…", "532…", "+90 532…") "0532 123 45 67" biçiminde kaydediliyor (`lib/telefonIceAktar.ts`).
 
 ### Vercel dağıtımı düzeldi
 - Sorun `CRON_SECRET` ortam değişkenindeki baştaki/sondaki boşluktu; değer düzeltilince build geçti. Son dağıtım **Hazır**, canlı site güncel.
@@ -65,12 +75,14 @@ Son güncelleme: 02.11.2026
 6. **Sipariş detayı → Sipariş Formu:** Önizlemede sadece form görünmeli. Büyük görsel, açıklama ve "Teslim alan / İmza" alanı olmalı.
 
 ## Bekleyen işler
+- **İş bilgisayarında git pull:** Ev bilgisayarından yapılan tüm commit'leri (bu dahil) iş bilgisayarına da çekin (`git pull`), ikisi senkron kalsın.
+- **PIN değiştirme:** Ortak kasa hesabının 6 haneli PIN'i değiştirilecek.
+- **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` dosyası — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
 - **Google Drive otomatik yedek:**
   - Google tarafı hazır: Drive API açık, onay ekranı "In production", OAuth istemcisi ve yenileme jetonu alındı.
   - Vercel'e beş değişken girildi. `FIREBASE_SERVICE_ACCOUNT` tek satırlık (base64) biçimde.
   - Vercel dağıtımı artık Hazır olduğuna göre test edilebilir: Ayarlar → **Şimdi Yedek Al**, ardından Vercel → Settings → Cron Jobs → **Run**.
   - Test başarılı olunca Google Cloud'da client secret'ı yenileyin, çünkü ekran görüntüsüyle sohbete düştü. Yollar: Clients → Panzehir Yedek → Add secret → eskisini Disable ve Delete. Sonra Vercel'de `GOOGLE_CLIENT_SECRET` değerini güncelleyin.
-- **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` dosyası Geri Dönüşüm Kutusu'nda duruyordu; sahibi iş bilgisayarında kalıcı olarak silecek.
 - **Excel yedeği isteği:** Gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenebilir (`exceljs` zaten kurulu).
 - **Banka Havalesi açılır listesi:** İstenirse hesap sahibi/banka adını özel tasarım bir açılır liste ile (küçük/soluk banka adı) göstermek — tarayıcının native `<select>`'i buna izin vermiyor.
 

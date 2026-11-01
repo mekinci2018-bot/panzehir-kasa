@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { MessageSquarePlus, Trash2, X } from "lucide-react";
 import { siparisOdemeAl, siparisSil, tahsilatNotuEkle, tahsilatNotuSil, updateSiparis } from "@/lib/db";
-import { useFirmalar } from "@/lib/hooks";
+import { useAyarlar, useFirmalar } from "@/lib/hooks";
 import { siparisHesap, odemeDurumu, tahsilatUyari } from "@/lib/siparis";
 import { siparisWaMesaji } from "@/lib/whatsapp";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL, todayISO } from "@/lib/format";
@@ -14,7 +14,7 @@ import FirmaFormModal from "./FirmaFormModal";
 import GorselHucre from "./GorselHucre";
 import AmountModal from "./AmountModal";
 import WhatsappButonu from "./WhatsappButonu";
-import { FaturaRozeti, OdemeRozeti, UretimRozeti } from "./Rozetler";
+import { OdemeRozeti, UretimRozeti } from "./Rozetler";
 import { hesapEtiketi } from "./OdemeSekliSelect";
 import { SiparisFormuButonu } from "./SiparisYazdir";
 
@@ -74,6 +74,7 @@ export default function SiparisDetayModal({
   onClose: () => void;
 }) {
   const { firmalar } = useFirmalar();
+  const { faturaTakibi } = useAyarlar();
   const [firma, setFirma] = useState<FirmaSecimi>({ firmaId: siparis.firmaId, firma: siparis.firmaAdi });
   const [form, setForm] = useState({
     tarih: siparis.tarih,
@@ -153,7 +154,17 @@ export default function SiparisDetayModal({
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
               <UretimRozeti value={siparis.uretim} onChange={(d) => updateSiparis(siparis.id, { uretim: d })} />
               <OdemeRozeti durum={odemeDurumu(siparis, h)} />
-              <FaturaRozeti kesildi={siparis.fatura} onChange={(v) => updateSiparis(siparis.id, { fatura: v })} />
+              {faturaTakibi && (
+                <label className="inline-flex items-center gap-1.5 text-[11px] text-[var(--muted)] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-[var(--ink)]"
+                    checked={siparis.fatura}
+                    onChange={(e) => updateSiparis(siparis.id, { fatura: e.target.checked })}
+                  />
+                  Fatura kesildi
+                </label>
+              )}
               {siparis.kaynak === "excel" && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Excel</span>}
               <SiparisFormuButonu siparis={siparis} h={h} />
               <WhatsappButonu

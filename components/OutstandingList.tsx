@@ -146,7 +146,7 @@ export default function OutstandingList({
   }
 
   return (
-    <div className="page-enter flex flex-col gap-6">
+    <div className="page-enter sayfa-dolu gap-2 print:h-auto">
       <YazdirmaBasligi baslik={title} donem={monthLabel(ay)} filtreler={["Önceki aylardan devreden açık kalemler dahil"]} />
 
       <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
@@ -193,7 +193,7 @@ export default function OutstandingList({
       ) : (
         <>
           {/* Phone: cards */}
-          <div className="md:hidden flex flex-col gap-2.5 print:hidden">
+          <div className="md:hidden flex flex-col gap-2.5 print:hidden flex-1 min-h-0 overflow-y-auto">
             {gorunen.map((k) => {
               const durum = k.vade ? vadeDurumu(k.vade) : "normal";
               const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
@@ -246,8 +246,8 @@ export default function OutstandingList({
           </div>
 
           {/* Desktop: table */}
-          <div className="hidden md:block card overflow-hidden print:hidden">
-            <div className="table-scroll">
+          <div className="hidden md:flex md:flex-col md:flex-1 md:min-h-0 card overflow-hidden print:hidden">
+            <div className="table-scroll tablo-doldur">
               <table className="w-full text-sm data-table">
                 <thead>
                   <tr>

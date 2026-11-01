@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Building2, Link2, Merge, Plus, Search, Wand2 } from "lucide-react";
+import { Building2, Link2, Merge, Plus, Search, Upload, Wand2 } from "lucide-react";
 import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaSiparisOzetleri, siparisOdemeleri } from "@/lib/siparis";
-import { addFirma, FirmaZatenVar, kayitlariFirmayaBagla, kilitleriTamamla } from "@/lib/db";
+import { addFirma, firmaTelefonGuncelle, FirmaZatenVar, kayitlariFirmayaBagla, kilitleriTamamla } from "@/lib/db";
 import { benzerFirmalar, cariOzetleri, FIRMA_TURU_LABEL, firmaAdiDuzenle, firmaAnahtari, firmaTuru } from "@/lib/firma";
+import { telefonNormallestir } from "@/lib/telefonIceAktar";
 import { formatDate, formatTL } from "@/lib/format";
 import type { Firma, FirmaTuru } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
@@ -18,6 +19,7 @@ import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 import FirmaBirlestirModal from "@/components/FirmaBirlestirModal";
 import FirmaIslemMenu from "@/components/FirmaIslemMenu";
 import FirmaFormModal, { TurSecici } from "@/components/FirmaFormModal";
+import TopluTelefonModal from "@/components/TopluTelefonModal";
 
 const SEKMELER: { tur: FirmaTuru; label: string }[] = [
   { tur: "musteri", label: "Müşteriler" },
@@ -46,6 +48,7 @@ export default function FirmalarPage() {
   const [secili, setSecili] = useState<string[]>([]);
   const [form, setForm] = useState<{ firma?: Firma } | null>(null);
   const [birlestir, setBirlestir] = useState(false);
+  const [topluTelefon, setTopluTelefon] = useState(false);
 
   // Companies created before name locks existed get theirs once, the first time this page loads.
   const kilitDenendi = useRef(false);
@@ -126,9 +129,14 @@ export default function FirmalarPage() {
     <div className="page-enter flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <PageHeader title="Firmalar" description="Cari hesaplar ve gider kalemleri. Firma adına tıklayınca ekstresi açılır." />
-        <button className="btn-primary inline-flex items-center gap-2" onClick={() => setForm({})}>
-          <Plus className="w-4 h-4" /> Yeni Firma
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-secondary inline-flex items-center gap-2" onClick={() => setTopluTelefon(true)}>
+            <Upload className="w-4 h-4" /> Toplu telefon ekle
+          </button>
+          <button className="btn-primary inline-flex items-center gap-2" onClick={() => setForm({})}>
+            <Plus className="w-4 h-4" /> Yeni Firma
+          </button>
+        </div>
       </div>
 
       {eslesmeyenler.length > 0 && <Eslestirme gruplar={eslesmeyenler} firmalar={firmalar} />}
@@ -228,7 +236,11 @@ export default function FirmalarPage() {
                         {f.pasif && <span className="badge bg-[#f1f1f4] text-[var(--muted)] ml-1.5">Pasif</span>}
                         {f.not && <div className="text-xs text-[var(--muted)] truncate max-w-md">{f.not}</div>}
                       </td>
-                      {!gider && <td className="tabular text-[var(--muted)]">{f.telefon || "—"}</td>}
+                      {!gider && (
+                        <td>
+                          <TelefonHucre value={f.telefon ?? ""} onCommit={(v) => firmaTelefonGuncelle(f.id, telefonNormallestir(v) ?? v)} />
+                        </td>
+                      )}
                       <td className="num">{gider ? o?.kayitSayisi ?? 0 : so?.siparisSayisi ?? 0}</td>
                       <td className="num">{gider ? <span className="font-medium">{formatTL(o?.harcama ?? 0)}</span> : <BakiyeHucre bakiye={o?.bakiye ?? 0} />}</td>
                       <td className="tabular text-[var(--muted)]">
@@ -284,6 +296,8 @@ export default function FirmalarPage() {
           }}
         />
       )}
+
+      {topluTelefon && <TopluTelefonModal firmalar={firmalar} onClose={() => setTopluTelefon(false)} />}
     </div>
   );
 }
@@ -427,6 +441,42 @@ function Eslestirme({ gruplar, firmalar }: { gruplar: EslesmeyenGrup[]; firmalar
         </ul>
       )}
     </div>
+  );
+}
+
+// Doğrudan listeden tıklayıp yazılabilir: Enter kaydeder, Tab bir alttaki firmanın telefon
+// hücresine geçer (menü butonuna değil).
+function TelefonHucre({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [taslak, setTaslak] = useState<string | null>(null);
+
+  function kaydetVeKapat() {
+    if (taslak !== null && taslak !== value) onCommit(taslak);
+    setTaslak(null);
+  }
+
+  return (
+    <input
+      data-telefon-hucre
+      className="input-sm tabular"
+      placeholder="Telefon ekle"
+      value={taslak ?? value}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setTaslak(e.target.value)}
+      onBlur={kaydetVeKapat}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        } else if (e.key === "Tab" && !e.shiftKey) {
+          e.preventDefault();
+          kaydetVeKapat();
+          const hepsi = [...document.querySelectorAll<HTMLInputElement>("input[data-telefon-hucre]")];
+          hepsi[hepsi.indexOf(e.currentTarget) + 1]?.focus();
+        } else if (e.key === "Escape") {
+          setTaslak(null);
+          e.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
 

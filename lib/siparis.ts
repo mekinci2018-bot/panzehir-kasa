@@ -68,8 +68,7 @@ export type SiparisSekmesi =
   | "odemeBekleyen"
   | "odenmedi"
   | "kismi"
-  | "odendi"
-  | "faturasiz";
+  | "odendi";
 
 export const SEKME_LABEL: Record<SiparisSekmesi, string> = {
   tumu: "Tümü",
@@ -82,7 +81,6 @@ export const SEKME_LABEL: Record<SiparisSekmesi, string> = {
   odenmedi: "Ödenmedi",
   kismi: "Kısmi",
   odendi: "Ödendi",
-  faturasiz: "Faturası Kesilmeyen",
 };
 
 // Each tab shows exactly its own state; "Ödeme Bekleyen" is Ödenmedi + Kısmi. Orders whose remainder
@@ -105,8 +103,6 @@ export function sekmedeMi(sekme: SiparisSekmesi, s: Siparis, h: SiparisHesap): b
     case "kismi":
     case "odendi":
       return odeme === sekme;
-    case "faturasiz":
-      return !s.fatura;
   }
 }
 

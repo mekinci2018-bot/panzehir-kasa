@@ -44,6 +44,14 @@
 
 * {
   box-sizing: border-box;
+  /* No blinking caret on plain text (headings, table cells, numbers); only real editable fields get one. */
+  caret-color: transparent;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  caret-color: auto;
 }
 
 body {
@@ -128,7 +136,7 @@ body {
   /* Tables */
   .data-table th {
     text-align: left;
-    padding: 10px 16px;
+    padding: 8px 16px;
     font-size: 11px;
     font-weight: 500;
     text-transform: uppercase;
@@ -149,8 +157,25 @@ body {
     max-height: 70vh;
   }
 
+  /* On a page using .sayfa-dolu, the table fills whatever height is left instead of capping at
+     70vh — the page itself never scrolls, only this one area does. */
+  .table-scroll.tablo-doldur {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  /* Page root for Siparişler/Arşiv/Alacaklar/Borçlar: a fixed-height column so the table section
+     (marked tablo-doldur) absorbs all the extra space and scrolls on its own. */
+  .sayfa-dolu {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
   .data-table td {
-    padding: 12px 16px;
+    padding: 9px 16px;
     border-top: 1px solid var(--border);
   }
 
@@ -168,7 +193,7 @@ body {
 
   /* Kasa entry rows are denser: inputs carry their own padding. */
   .data-table .kasa-row td {
-    padding: 6px 10px;
+    padding: 4px 10px;
   }
 
   .data-table .kasa-row td {
@@ -234,7 +259,7 @@ body {
     background: transparent;
     border: 1px solid transparent;
     border-radius: 7px;
-    padding: 6px 8px;
+    padding: 4px 8px;
     font-size: 13.5px;
     width: 100%;
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;

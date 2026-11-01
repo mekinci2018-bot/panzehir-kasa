@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, CloudUpload, Download, History, Loader2, RotateCcw, XCircle } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { useYedekDurumu } from "@/lib/hooks";
+import { ayarGuncelle } from "@/lib/db";
+import { useAyarlar, useYedekDurumu } from "@/lib/hooks";
 import {
   YedekApiHatasi,
   bilgisayaraIndir,
@@ -34,6 +35,7 @@ type Mesaj = { tur: "tamam" | "hata"; metin: string; eksikler?: string[] } | nul
 
 export default function AyarlarPage() {
   const { durum, loading } = useYedekDurumu();
+  const { faturaTakibi } = useAyarlar();
   const [gorsellerDahil, setGorsellerDahil] = useState(false);
   const [islem, setIslem] = useState<Islem>(null);
   const [mesaj, setMesaj] = useState<Mesaj>(null);
@@ -62,6 +64,23 @@ export default function AyarlarPage() {
   return (
     <div className="page-enter flex flex-col gap-6 max-w-3xl">
       <PageHeader title="Ayarlar" description="Yedekleme ve geri yükleme." />
+
+      <section className="card p-5 flex flex-col gap-3">
+        <h2 className="font-semibold">Genel</h2>
+        <label className="inline-flex items-center gap-2 text-sm cursor-pointer select-none w-fit">
+          <input
+            type="checkbox"
+            className="w-4 h-4 accent-[var(--ink)]"
+            checked={faturaTakibi}
+            onChange={(e) => ayarGuncelle({ faturaTakibi: e.target.checked })}
+          />
+          Fatura takibini göster
+        </label>
+        <p className="text-xs text-[var(--muted-soft)]">
+          Açınca sipariş detayında küçük bir &ldquo;Fatura kesildi&rdquo; onay kutusu görünür. Siparişler tablosunda, sekmelerde ve
+          yazdırma çıktılarında fatura bilgisi gösterilmez.
+        </p>
+      </section>
 
       <section className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-[var(--border)]">

@@ -176,7 +176,7 @@ export default function ArsivPage() {
   const dosyaAdi = `Arşiv - ${donemMetni} - ${SEKMELER.find((s) => s.id === sekme)!.label}`;
 
   return (
-    <div className="page-enter flex flex-col gap-5">
+    <div className="page-enter sayfa-dolu gap-2 print:h-auto">
       <YazdirmaBasligi baslik="Arşiv" donem={donemMetni} filtreler={filtreMetinleri} />
 
       <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
@@ -318,7 +318,7 @@ export default function ArsivPage() {
 
       <ArsivYazdirmaListesi kayitlar={gorunen} />
 
-      <div className="card overflow-hidden print:hidden">
+      <div className="card overflow-hidden print:hidden flex-1 min-h-0 flex flex-col">
         {loading && kayitlar.length === 0 ? (
           <YukleniyorSatiri />
         ) : gorunen.length === 0 ? (
@@ -328,7 +328,7 @@ export default function ArsivPage() {
             description={aramaAnahtari ? `“${arama.trim()}” ile eşleşen kayıt bulunamadı.` : `${monthLabel(ay)} için bu filtrelere uyan kayıt yok.`}
           />
         ) : (
-          <div className="table-scroll">
+          <div className="table-scroll tablo-doldur">
             <table className="w-full text-sm data-table">
               <thead>
                 <tr>

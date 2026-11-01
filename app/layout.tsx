@@ -43,11 +43,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: INSTALL_CAPTURE_SCRIPT }} />
       </head>
-      <body className="min-h-full">
+      <body className="h-full overflow-hidden print:h-auto print:overflow-visible">
         <AuthGate>
-          <div className="flex flex-col md:flex-row min-h-screen">
+          <div className="flex flex-col md:flex-row h-screen print:h-auto">
             <Sidebar />
-            <main className="flex-1 px-4 py-6 md:px-12 md:py-10 max-w-[1400px] w-full print:p-0 print:max-w-none">{children}</main>
+            <main className="flex-1 min-h-0 overflow-y-auto px-4 py-6 md:px-12 md:py-10 max-w-[1400px] w-full print:p-0 print:max-w-none print:h-auto print:overflow-visible">
+              {children}
+            </main>
           </div>
         </AuthGate>
       </body>

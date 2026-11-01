@@ -96,7 +96,6 @@ export function SiparisYazdirmaListesi({
               <th className="sag w-[68px]">Kalan</th>
               <th className="w-[58px]">Üretim</th>
               <th className="w-[52px]">Ödeme</th>
-              <th className="w-[48px]">Fatura</th>
               <th className="w-[52px]">Ödeme Günü</th>
               <th className="w-[150px]">Açıklama</th>
             </tr>
@@ -105,7 +104,7 @@ export function SiparisYazdirmaListesi({
             {bolumler.map((b) => [
               bolumler.length > 1 && b.satirlar.length > 0 && (
                 <tr key={`${b.baslik}-b`} className="grup-basi">
-                  <td colSpan={13}>
+                  <td colSpan={12}>
                     {b.baslik} <span className="font-normal text-[var(--muted)]">({b.satirlar.length} iş)</span>
                   </td>
                 </tr>
@@ -130,11 +129,6 @@ export function SiparisYazdirmaListesi({
                     <td>
                       <Rozet cls={odemeRenk}>{odemeAdi}</Rozet>
                     </td>
-                    <td>
-                      <Rozet cls={s.fatura ? "bg-[#eef0f7] text-[var(--ink)]" : "text-[var(--muted)] ring-1 ring-inset ring-[var(--border-strong)]"}>
-                        {s.fatura ? "Kesildi" : "Kesilmedi"}
-                      </Rozet>
-                    </td>
                     <td className="tabular">{s.odemeGunu ? formatDate(s.odemeGunu) : "—"}</td>
                     <td className="whitespace-pre-line text-[9.5px]">{s.aciklama}</td>
                   </tr>
@@ -146,7 +140,7 @@ export function SiparisYazdirmaListesi({
               <td className="sag">{formatTL(toplam(({ s }) => s.tutar))}</td>
               <td className="sag">{formatTL(toplam(({ h }) => h.odenen))}</td>
               <td className="sag">{formatTL(toplam(({ h }) => h.kalan))}</td>
-              <td colSpan={5} />
+              <td colSpan={4} />
             </tr>
           </tbody>
         </table>

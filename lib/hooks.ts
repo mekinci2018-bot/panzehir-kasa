@@ -16,7 +16,7 @@ import {
 import { getDb, ensureSignedIn, cikistaCalistir } from "./firebase";
 import { BANKALAR, CALISANLAR, FIRMALAR, GORSELLER, KAYITLAR, ONIZLEMELER, SIPARISLER } from "./db";
 import { tumHareketler } from "./hareketler";
-import type { BankaHesabi, Calisan, Firma, Gorsel, KasaKaydi, Siparis, YedekDurumu } from "./types";
+import type { Ayarlar, BankaHesabi, Calisan, Firma, Gorsel, KasaKaydi, Siparis, YedekDurumu } from "./types";
 
 // ---- Shared listeners ----
 // Each collection has one Firestore listener for the whole session, however many pages and modals
@@ -165,6 +165,13 @@ export function useCalisanlar() {
 export function useYedekDurumu() {
   const { veri, loading } = useKoleksiyon<YedekDurumu & { id: string }>("sistem", () => collection(getDb(), "sistem"));
   return { durum: veri.find((d) => d.id === "yedek") ?? null, loading };
+}
+
+// App-wide preferences (shared by everyone using the account, not per-device).
+export function useAyarlar() {
+  const { veri, loading } = useKoleksiyon<Ayarlar & { id: string }>("sistem", () => collection(getDb(), "sistem"));
+  const belge = veri.find((d) => d.id === "ayarlar");
+  return { faturaTakibi: belge?.faturaTakibi ?? false, loading };
 }
 
 // ---- Images ----

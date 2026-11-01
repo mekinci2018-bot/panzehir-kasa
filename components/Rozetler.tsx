@@ -119,22 +119,3 @@ export function OdemeRozeti({ durum }: { durum: OdemeDurumu }) {
     </span>
   );
 }
-
-const FATURA_SECENEKLERI = [
-  { value: true, label: "Kesildi" },
-  { value: false, label: "Kesilmedi" },
-];
-
-// Değişim sadece menüden yapılır; rozete tek tıklamak artık durumu değiştirmez.
-export function FaturaRozeti({ kesildi, onChange }: { kesildi: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <RozetDropdown
-      renkSinifi={kesildi ? "bg-[#eef0f7] text-[var(--ink)]" : "bg-transparent text-[var(--muted)] ring-1 ring-inset ring-[var(--border-strong)]"}
-      etiket={kesildi ? "Kesildi" : "Kesilmedi"}
-      value={kesildi}
-      anahtar={(v) => String(v)}
-      onSelect={onChange}
-      secenekler={FATURA_SECENEKLERI}
-    />
-  );
-}

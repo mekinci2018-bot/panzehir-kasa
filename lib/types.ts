@@ -114,6 +114,11 @@ export interface YedekDurumu {
   sonGeriYukleme?: { zaman: number; dosya: string; basarili: boolean; hata?: string };
 }
 
+// App-wide preferences (sistem/ayarlar), shared by everyone using the account.
+export interface Ayarlar {
+  faturaTakibi?: boolean; // absent/false = hidden everywhere except the small checkbox in sipariş detayı
+}
+
 export type FirmaTuru = "musteri" | "tedarikci" | "gider";
 
 export interface Firma {

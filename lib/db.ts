@@ -7,6 +7,7 @@ import {
   deleteField,
   doc,
   runTransaction,
+  setDoc,
   updateDoc,
   writeBatch,
   type DocumentReference,
@@ -15,7 +16,13 @@ import {
 import { getDb, ensureSignedIn } from "./firebase";
 import { monthKeyOf, todayISO } from "./format";
 import { firmaAdiDuzenle, firmaAnahtari } from "./firma";
-import type { BankaHesabi, Calisan, Firma, FirmaTuru, GorselAlani, KasaKaydi, Odeme, Siparis, TahsilatNotu } from "./types";
+import type { Ayarlar, BankaHesabi, Calisan, Firma, FirmaTuru, GorselAlani, KasaKaydi, Odeme, Siparis, TahsilatNotu } from "./types";
+
+// App-wide preferences, shared by everyone using the account (sistem/ayarlar).
+export async function ayarGuncelle(patch: Partial<Ayarlar>) {
+  await ensureSignedIn();
+  return setDoc(doc(getDb(), "sistem", "ayarlar"), patch, { merge: true });
+}
 
 // Firestore rejects undefined values. A bank account only makes sense for havale,
 // and a card description ("Ziraat POS") only for kart.
@@ -308,6 +315,18 @@ export async function firmaTuruDegistir(firma: Firma, tur: FirmaTuru) {
 export async function firmaPasifYap(id: string, pasif: boolean) {
   await ensureSignedIn();
   return updateDoc(doc(getDb(), FIRMALAR, id), { pasif, updatedAt: Date.now() });
+}
+
+export async function firmaTelefonGuncelle(id: string, telefon: string) {
+  await ensureSignedIn();
+  return updateDoc(doc(getDb(), FIRMALAR, id), { telefon: telefon.trim() || deleteField(), updatedAt: Date.now() });
+}
+
+// Toplu telefon ekleme önizlemesinden onaylanan satırlar.
+export async function topluTelefonGuncelle(guncellemeler: { id: string; telefon: string }[]) {
+  await ensureSignedIn();
+  const now = Date.now();
+  await topluGuncelle(guncellemeler.map(({ id, telefon }) => ({ ref: doc(getDb(), FIRMALAR, id), data: { telefon, updatedAt: now } })));
 }
 
 // Only safe when the company has no kayıt/sipariş left (checked by the caller): soft-delete and free

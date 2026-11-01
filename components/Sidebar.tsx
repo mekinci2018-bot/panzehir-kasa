@@ -98,7 +98,7 @@ export default function Sidebar() {
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
           <aside className="drawer-in absolute inset-y-0 left-0 w-72 bg-[var(--sidebar-bg)] flex flex-col">
             <div className="px-4 py-4 flex items-center justify-between">
-              <Logo compact />
+              <Logo compact onClick={() => setOpen(false)} />
               <button
                 className="w-9 h-9 flex items-center justify-center rounded-lg text-white/80 hover:bg-white/10"
                 onClick={() => setOpen(false)}
