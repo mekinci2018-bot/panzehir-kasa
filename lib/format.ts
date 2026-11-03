@@ -62,6 +62,15 @@ export function monthLabel(monthKey: string): string {
   return `${AYLAR[m - 1]} ${y}`;
 }
 
+// Dative suffix by how the year's last digit is read (altı → altıya, beş → beşe), so a warning
+// reads naturally: "Ekim 2026'ya işlenecek".
+const YIL_EKI: Record<string, string> = { "0": "a", "1": "e", "2": "ye", "3": "e", "4": "e", "5": "e", "6": "ya", "7": "ye", "8": "e", "9": "a" };
+
+export function ayaDogru(monthKey: string): string {
+  const etiket = monthLabel(monthKey);
+  return `${etiket}'${YIL_EKI[etiket.slice(-1)] ?? "a"}`;
+}
+
 export function currentMonthKey(): string {
   return todayISO().slice(0, 7);
 }

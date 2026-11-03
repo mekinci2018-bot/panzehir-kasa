@@ -332,8 +332,8 @@ export default function OutstandingList({
           kartOnerileri={kartOnerileri(kayitlar)}
           defaultSecim={varsayilanSecim(modalFor)}
           onClose={() => setModalFor(null)}
-          onConfirm={async (amount, secim) => {
-            await tahsilEt(modalFor, { tutar: amount, ...secim });
+          onConfirm={async (amount, secim, tarih) => {
+            await tahsilEt(modalFor, { tutar: amount, ...secim, tarih });
             setModalFor(null);
           }}
         />

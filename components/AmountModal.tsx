@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { formatTL } from "@/lib/format";
+import { formatTL, todayISO } from "@/lib/format";
 import type { BankaHesabi } from "@/lib/types";
 import OdemeSekliSelect, { type OdemeSecimi } from "./OdemeSekliSelect";
+import TarihAlani from "./TarihAlani";
 
 export default function AmountModal({
   title,
@@ -20,14 +21,15 @@ export default function AmountModal({
   kartOnerileri?: string[];
   defaultSecim: OdemeSecimi;
   onClose: () => void;
-  onConfirm: (amount: number, secim: OdemeSecimi) => void;
+  onConfirm: (amount: number, secim: OdemeSecimi, tarih: string) => void;
 }) {
   const [value, setValue] = useState(String(kalan));
   const [secim, setSecim] = useState<OdemeSecimi>(defaultSecim);
+  const [tarih, setTarih] = useState(todayISO());
 
   function confirm() {
     const amount = Number(value);
-    if (amount > 0) onConfirm(amount, secim);
+    if (amount > 0 && tarih) onConfirm(amount, secim, tarih);
   }
 
   return (
@@ -47,6 +49,10 @@ export default function AmountModal({
           onKeyDown={(e) => e.key === "Enter" && confirm()}
           className="input-field num text-lg"
         />
+
+        <div className="mt-4">
+          <TarihAlani value={tarih} onChange={setTarih} />
+        </div>
 
         <label className="field-label mt-4">Ödeme şekli</label>
         <OdemeSekliSelect value={secim} hesaplar={hesaplar} kartOnerileri={kartOnerileri} onChange={setSecim} size="md" />

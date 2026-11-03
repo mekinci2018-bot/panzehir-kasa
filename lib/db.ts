@@ -104,15 +104,17 @@ export async function updateKasaKaydi(id: string, patch: Partial<KasaKaydi>) {
   return updateDoc(doc(getDb(), KAYITLAR, id), next);
 }
 
+// tarih is the day the money moved (so it lands in that month); createdAt stays the moment it was
+// entered, which the detail window shows when the two differ.
 export async function tahsilEt(
   kayit: KasaKaydi,
-  odeme: { tutar: number; odemeSekli: Odeme["odemeSekli"]; bankaHesapId?: string; kartAciklama?: string }
+  odeme: { tutar: number; odemeSekli: Odeme["odemeSekli"]; bankaHesapId?: string; kartAciklama?: string; tarih?: string }
 ) {
   await ensureSignedIn();
   const yeniAlinan = kayit.alinanTutar + odeme.tutar;
   const durum: KasaKaydi["durum"] = yeniAlinan >= kayit.toplamTutar ? "tamamlandi" : "aktif";
   const kalem: Odeme = {
-    tarih: todayISO(),
+    tarih: odeme.tarih || todayISO(),
     tutar: odeme.tutar,
     odemeSekli: odeme.odemeSekli,
     ...odemeAlanlari(odeme.odemeSekli, odeme.bankaHesapId, odeme.kartAciklama),
@@ -373,13 +375,14 @@ export type OdemeGirdisi = {
   odemeSekli: KasaKaydi["odemeSekli"];
   bankaHesapId?: string;
   kartAciklama?: string;
+  tarih?: string; // the day the money moved; defaults to today
 };
 
 // A payment on an order is a Kasa "Giriş" carrying siparisId and firmaId; the order's Ödenen is
 // computed from these records, so the money is counted once, in Kasa.
 function siparisOdemesiVerisi(s: Pick<Siparis, "id" | "firmaId" | "firmaAdi" | "urun">, odeme: OdemeGirdisi, tarih = todayISO()) {
   return kasaKaydiVerisi({
-    tarih,
+    tarih: odeme.tarih || tarih,
     firma: s.firmaAdi,
     firmaId: s.firmaId,
     siparisId: s.id,

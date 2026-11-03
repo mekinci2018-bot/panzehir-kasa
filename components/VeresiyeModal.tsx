@@ -4,6 +4,7 @@ import { useState } from "react";
 import { todayISO } from "@/lib/format";
 import { useCalisanlar, useFirmalar } from "@/lib/hooks";
 import FirmaSecici, { type FirmaSecimi } from "./FirmaSecici";
+import TarihAlani from "./TarihAlani";
 
 export interface VeresiyeForm {
   tarih: string;
@@ -64,10 +65,7 @@ export default function VeresiyeModal({
           <input type="number" className="input-field num" value={tutar} onChange={(e) => setTutar(e.target.value)} placeholder="0,00" />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="field-label">Tarih</label>
-            <input type="date" className="input-field" value={tarih} onChange={(e) => setTarih(e.target.value)} />
-          </div>
+          <TarihAlani value={tarih} onChange={setTarih} />
           <div>
             <label className="field-label">Vade tarihi (opsiyonel)</label>
             <input type="date" className="input-field" value={vadeTarihi} min={tarih} onChange={(e) => setVadeTarihi(e.target.value)} />

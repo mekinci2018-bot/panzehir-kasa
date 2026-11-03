@@ -14,6 +14,7 @@ import FirmaFormModal from "./FirmaFormModal";
 import GorselHucre from "./GorselHucre";
 import AmountModal from "./AmountModal";
 import WhatsappButonu from "./WhatsappButonu";
+import { GirisNotu } from "./TarihAlani";
 import { OdemeRozeti, UretimRozeti } from "./Rozetler";
 import { hesapEtiketi } from "./OdemeSekliSelect";
 import { SiparisFormuButonu } from "./SiparisYazdir";
@@ -45,9 +46,9 @@ export function SiparisOdemeModal({
       kartOnerileri={kartOnerileri}
       defaultSecim={{ odemeSekli: "nakit", bankaHesapId: "", kartAciklama: "" }}
       onClose={onClose}
-      onConfirm={async (tutar, secim) => {
+      onConfirm={async (tutar, secim, tarih) => {
         try {
-          await siparisOdemeAl(siparis, { tutar, ...secim });
+          await siparisOdemeAl(siparis, { tutar, ...secim, tarih });
           onClose();
         } catch (err) {
           console.error(err);
@@ -266,6 +267,7 @@ export default function SiparisDetayModal({
                         <span className="text-xs text-[var(--muted)]">
                           <span className="tabular">{formatDate(k.tarih)}</span> · {ODEME_SEKLI_LABEL[k.odemeSekli]}
                           {hesap ? ` · ${hesapEtiketi(hesap)}` : k.kartAciklama ? ` · ${k.kartAciklama}` : ""} · Kasa
+                          <GirisNotu tarih={k.tarih} createdAt={k.createdAt} />
                         </span>
                         <span className="tabular font-medium">{formatTL(k.alinanTutar)}</span>
                       </li>

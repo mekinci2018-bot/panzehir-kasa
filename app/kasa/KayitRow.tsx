@@ -5,6 +5,7 @@ import type { BankaHesabi, Calisan, Firma, Siparis, OdemeSekli, Yon } from "@/li
 import OdemeSekliSelect from "@/components/OdemeSekliSelect";
 import FirmaSecici from "@/components/FirmaSecici";
 import SonSiparisler from "@/components/SonSiparisler";
+import { TarihUyarilari } from "@/components/TarihAlani";
 
 export interface DraftKayit {
   tarih: string;
@@ -97,6 +98,7 @@ export default function KayitRow({
           value={value.tarih}
           onChange={(e) => set("tarih", e.target.value)}
         />
+        <TarihUyarilari tarih={value.tarih} className="px-2" />
       </td>
       <td className="align-top">
         <input

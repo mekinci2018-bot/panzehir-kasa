@@ -8,6 +8,7 @@ import type { BankaHesabi, KasaKaydi, Yon } from "@/lib/types";
 import OdemeSekliSelect, { hesapEtiketi, type OdemeSecimi } from "./OdemeSekliSelect";
 import FirmaSecici, { type FirmaSecimi } from "./FirmaSecici";
 import FirmaLink from "./FirmaLink";
+import { GirisNotu } from "./TarihAlani";
 import { useCalisanlar, useFirmalar } from "@/lib/hooks";
 
 function girisZamani(ms: number): string {
@@ -197,6 +198,7 @@ export default function KayitDetayModal({
                       <span className="text-[var(--muted)] text-xs">
                         <span className="tabular">{formatDate(o.tarih)}</span> · {ODEME_SEKLI_LABEL[o.odemeSekli]}
                         {detay ? ` · ${detay}` : ""}
+                        <GirisNotu tarih={o.tarih} createdAt={o.createdAt} />
                       </span>
                       <span className="tabular font-medium">{formatTL(o.tutar)}</span>
                     </li>
