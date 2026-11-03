@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageSquarePlus, Trash2, X } from "lucide-react";
-import { siparisOdemeAl, siparisSil, tahsilatNotuEkle, tahsilatNotuSil, updateSiparis } from "@/lib/db";
+import { MessageSquarePlus, Pencil, Trash2, X } from "lucide-react";
+import { kayitSil, siparisOdemeAl, siparisOdemesiGuncelle, siparisSil, tahsilatNotuEkle, tahsilatNotuSil, updateSiparis } from "@/lib/db";
 import { useAyarlar, useFirmalar } from "@/lib/hooks";
 import { siparisHesap, odemeDurumu, tahsilatUyari } from "@/lib/siparis";
 import { siparisWaMesaji } from "@/lib/whatsapp";
@@ -15,6 +15,7 @@ import GorselHucre from "./GorselHucre";
 import AmountModal from "./AmountModal";
 import WhatsappButonu from "./WhatsappButonu";
 import { GirisNotu } from "./TarihAlani";
+import SatirMenu from "./SatirMenu";
 import { OdemeRozeti, UretimRozeti } from "./Rozetler";
 import { hesapEtiketi } from "./OdemeSekliSelect";
 import { SiparisFormuButonu } from "./SiparisYazdir";
@@ -89,13 +90,17 @@ export default function SiparisDetayModal({
   const [silOnay, setSilOnay] = useState(false);
   const [telefonAcik, setTelefonAcik] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A payment on an order is its own Kasa record, so these hold record ids.
+  const [duzenlenenOdemeId, setDuzenlenenOdemeId] = useState<string | null>(null);
+  const [silinecekOdemeId, setSilinecekOdemeId] = useState<string | null>(null);
   const firmaKaydi = firmalar.find((f) => f.id === siparis.firmaId);
+  const duzenlenenOdeme = odemeKayitlari.find((k) => k.id === duzenlenenOdemeId);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !odemeAc && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !odemeAc && !duzenlenenOdemeId && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, odemeAc]);
+  }, [onClose, odemeAc, duzenlenenOdemeId]);
 
   const h = siparisHesap({ ...siparis, tutar: Number(form.tutar) || 0 }, odemeler);
   const uyari = tahsilatUyari({ ...siparis, odemeGunu: form.odemeGunu || undefined }, h);
@@ -269,7 +274,36 @@ export default function SiparisDetayModal({
                           {hesap ? ` · ${hesapEtiketi(hesap)}` : k.kartAciklama ? ` · ${k.kartAciklama}` : ""} · Kasa
                           <GirisNotu tarih={k.tarih} createdAt={k.createdAt} />
                         </span>
-                        <span className="tabular font-medium">{formatTL(k.alinanTutar)}</span>
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span className="tabular font-medium">{formatTL(k.alinanTutar)}</span>
+                          {silinecekOdemeId === k.id ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
+                              <span className="text-[var(--brand-dark)] font-medium">Silinsin mi?</span>
+                              <button type="button" className="btn-secondary !py-1 !px-2 !text-xs" onClick={() => setSilinecekOdemeId(null)}>
+                                Vazgeç
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-primary !bg-[var(--brand)] hover:!bg-[var(--brand-dark)] !py-1 !px-2 !text-xs disabled:opacity-40"
+                                disabled={busy}
+                                onClick={async () => {
+                                  setSilinecekOdemeId(null);
+                                  await calistir(() => kayitSil(k.id), "Ödeme silinemedi, lütfen tekrar deneyin.");
+                                }}
+                              >
+                                Evet, sil
+                              </button>
+                            </span>
+                          ) : (
+                            <SatirMenu
+                              baslik="Ödeme işlemleri"
+                              ogeler={[
+                                { label: "Düzenle", icon: Pencil, onClick: () => setDuzenlenenOdemeId(k.id) },
+                                { label: "Sil", icon: Trash2, tehlikeli: true, onClick: () => setSilinecekOdemeId(k.id) },
+                              ]}
+                            />
+                          )}
+                        </span>
                       </li>
                     );
                   })}
@@ -376,6 +410,32 @@ export default function SiparisDetayModal({
 
       {odemeAc && (
         <SiparisOdemeModal siparis={siparis} kalan={h.kalan} hesaplar={hesaplar} kartOnerileri={kartOnerileri} onClose={() => setOdemeAc(false)} />
+      )}
+
+      {duzenlenenOdeme && (
+        <AmountModal
+          title="Ödemeyi düzenle"
+          kalan={0}
+          kalanGoster={false}
+          onayEtiketi="Kaydet"
+          hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri}
+          defaultTutar={duzenlenenOdeme.alinanTutar}
+          defaultTarih={duzenlenenOdeme.tarih}
+          defaultSecim={{
+            odemeSekli: duzenlenenOdeme.odemeSekli,
+            bankaHesapId: duzenlenenOdeme.bankaHesapId ?? "",
+            kartAciklama: duzenlenenOdeme.kartAciklama ?? "",
+          }}
+          onClose={() => setDuzenlenenOdemeId(null)}
+          onConfirm={async (tutar, secim, tarih) => {
+            const ok = await calistir(
+              () => siparisOdemesiGuncelle(duzenlenenOdeme.id, { tutar, tarih, ...secim }),
+              "Ödeme güncellenemedi, lütfen tekrar deneyin."
+            );
+            if (ok) setDuzenlenenOdemeId(null);
+          }}
+        />
       )}
 
       {telefonAcik && firmaKaydi && (

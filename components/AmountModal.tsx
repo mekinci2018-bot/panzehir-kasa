@@ -6,12 +6,17 @@ import type { BankaHesabi } from "@/lib/types";
 import OdemeSekliSelect, { type OdemeSecimi } from "./OdemeSekliSelect";
 import TarihAlani from "./TarihAlani";
 
+// Takes a payment, and with defaultTutar/defaultTarih also edits one that was already taken.
 export default function AmountModal({
   title,
   kalan,
   hesaplar,
   kartOnerileri,
   defaultSecim,
+  defaultTutar,
+  defaultTarih,
+  kalanGoster = true,
+  onayEtiketi = "Onayla",
   onClose,
   onConfirm,
 }: {
@@ -20,12 +25,16 @@ export default function AmountModal({
   hesaplar: BankaHesabi[];
   kartOnerileri?: string[];
   defaultSecim: OdemeSecimi;
+  defaultTutar?: number; // starting amount; the remainder when absent
+  defaultTarih?: string; // starting date; today when absent
+  kalanGoster?: boolean;
+  onayEtiketi?: string;
   onClose: () => void;
   onConfirm: (amount: number, secim: OdemeSecimi, tarih: string) => void;
 }) {
-  const [value, setValue] = useState(String(kalan));
+  const [value, setValue] = useState(String(defaultTutar ?? kalan));
   const [secim, setSecim] = useState<OdemeSecimi>(defaultSecim);
-  const [tarih, setTarih] = useState(todayISO());
+  const [tarih, setTarih] = useState(defaultTarih || todayISO());
 
   function confirm() {
     const amount = Number(value);
@@ -36,9 +45,11 @@ export default function AmountModal({
     <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-center justify-center z-50 p-4">
       <div className="card w-full max-w-md p-6">
         <h3 className="font-semibold text-base mb-1">{title}</h3>
-        <p className="text-sm text-[var(--muted)] mb-5">
-          Kalan tutar: <span className="num text-[var(--foreground)]">{formatTL(kalan)}</span>
-        </p>
+        {kalanGoster && (
+          <p className="text-sm text-[var(--muted)] mb-5">
+            Kalan tutar: <span className="num text-[var(--foreground)]">{formatTL(kalan)}</span>
+          </p>
+        )}
 
         <label className="field-label">Tutar</label>
         <input
@@ -62,7 +73,7 @@ export default function AmountModal({
             Vazgeç
           </button>
           <button className="btn-primary" onClick={confirm}>
-            Onayla
+            {onayEtiketi}
           </button>
         </div>
       </div>

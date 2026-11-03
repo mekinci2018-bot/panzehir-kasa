@@ -18,7 +18,9 @@ export interface Hareket {
 
 export function hareketlerOf(k: KasaKaydi): Hareket[] {
   const odemeler = k.odemeler ?? [];
-  const sonradan = odemeler.reduce((sum, o) => sum + o.tutar, 0);
+  // A payment line sent to Çöp Kutusu moves no money, but it keeps its slot in the array so the
+  // live lines' odemeIndex stays valid.
+  const sonradan = odemeler.reduce((sum, o) => (o.silindi ? sum : sum + o.tutar), 0);
   const pesin = k.alinanTutar - sonradan;
   const base = { kayitId: k.id, firmaId: k.firmaId, personelId: k.personelId, firma: k.firma, aciklama: k.aciklama, yon: k.yon };
 
@@ -27,6 +29,7 @@ export function hareketlerOf(k: KasaKaydi): Hareket[] {
     list.push({ ...base, tarih: k.tarih, tutar: pesin, odemeSekli: k.odemeSekli, bankaHesapId: k.bankaHesapId, kartAciklama: k.kartAciklama });
   }
   odemeler.forEach((o, odemeIndex) => {
+    if (o.silindi) return;
     list.push({ ...base, tarih: o.tarih, tutar: o.tutar, odemeSekli: o.odemeSekli, bankaHesapId: o.bankaHesapId, kartAciklama: o.kartAciklama, odemeIndex });
   });
   return list;

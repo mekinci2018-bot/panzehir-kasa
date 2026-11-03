@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2, X } from "lucide-react";
-import { kayitSil, updateKasaKaydi } from "@/lib/db";
+import { Pencil, Trash2, X } from "lucide-react";
+import { kayitSil, odemeSatiriGuncelle, odemeSatiriSil, updateKasaKaydi } from "@/lib/db";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
 import type { BankaHesabi, KasaKaydi, Yon } from "@/lib/types";
 import OdemeSekliSelect, { hesapEtiketi, type OdemeSecimi } from "./OdemeSekliSelect";
 import FirmaSecici, { type FirmaSecimi } from "./FirmaSecici";
 import FirmaLink from "./FirmaLink";
 import { GirisNotu } from "./TarihAlani";
+import SatirMenu from "./SatirMenu";
+import AmountModal from "./AmountModal";
 import { useCalisanlar, useFirmalar } from "@/lib/hooks";
 
 function girisZamani(ms: number): string {
@@ -54,15 +56,21 @@ export default function KayitDetayModal({
   });
   const [silOnay, setSilOnay] = useState(false);
   const [busy, setBusy] = useState(false);
+  // One payment line of this record: the index in odemeler[] identifies it.
+  const [duzenlenenOdeme, setDuzenlenenOdeme] = useState<number | null>(null);
+  const [silinecekOdeme, setSilinecekOdeme] = useState<number | null>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && duzenlenenOdeme === null && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, duzenlenenOdeme]);
 
   const kalan = (Number(form.toplamTutar) || 0) - (Number(form.alinanTutar) || 0);
   const odemeler = kayit.odemeler ?? [];
+  // Deleted lines keep their slot (so the live ones' indexes stay valid) but are shown in Çöp Kutusu.
+  const canliOdemeler = odemeler.map((o, index) => ({ o, index })).filter((x) => !x.o.silindi);
+  const odemeDuzenlenen = duzenlenenOdeme === null ? undefined : odemeler[duzenlenenOdeme];
 
   const toplam = Number(form.toplamTutar) || 0;
   const alinan = Number(form.alinanTutar) || 0;
@@ -91,6 +99,19 @@ export default function KayitDetayModal({
     } catch (err) {
       console.error(err);
       alert("Kayıt güncellenemedi, lütfen tekrar deneyin.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function odemeSil(index: number) {
+    setSilinecekOdeme(null);
+    setBusy(true);
+    try {
+      await odemeSatiriSil(kayit, index);
+    } catch (err) {
+      console.error(err);
+      alert("Ödeme silinemedi, lütfen tekrar deneyin.");
     } finally {
       setBusy(false);
     }
@@ -186,25 +207,54 @@ export default function KayitDetayModal({
             <OdemeSekliSelect value={secim} hesaplar={hesaplar} kartOnerileri={kartOnerileri} onChange={setSecim} size="md" />
           </div>
 
-          {odemeler.length > 0 && (
+          {canliOdemeler.length > 0 && (
             <div>
               <div className="field-label">Sonradan yapılan ödemeler</div>
               <ul className="rounded-[9px] border border-[var(--border)] divide-y divide-[var(--border)] text-sm">
-                {odemeler.map((o, i) => {
+                {canliOdemeler.map(({ o, index }) => {
                   const hesap = hesaplar.find((h) => h.id === o.bankaHesapId);
                   const detay = hesap ? hesapEtiketi(hesap) : o.kartAciklama;
                   return (
-                    <li key={i} className="px-3 py-2 flex items-center justify-between gap-3">
+                    <li key={index} className="px-3 py-2 flex items-center justify-between gap-3">
                       <span className="text-[var(--muted)] text-xs">
                         <span className="tabular">{formatDate(o.tarih)}</span> · {ODEME_SEKLI_LABEL[o.odemeSekli]}
                         {detay ? ` · ${detay}` : ""}
                         <GirisNotu tarih={o.tarih} createdAt={o.createdAt} />
                       </span>
-                      <span className="tabular font-medium">{formatTL(o.tutar)}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="tabular font-medium">{formatTL(o.tutar)}</span>
+                        {silinecekOdeme === index ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
+                            <span className="text-[var(--brand-dark)] font-medium">Silinsin mi?</span>
+                            <button type="button" className="btn-secondary !py-1 !px-2 !text-xs" onClick={() => setSilinecekOdeme(null)}>
+                              Vazgeç
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-primary !bg-[var(--brand)] hover:!bg-[var(--brand-dark)] !py-1 !px-2 !text-xs disabled:opacity-40"
+                              disabled={busy}
+                              onClick={() => odemeSil(index)}
+                            >
+                              Evet, sil
+                            </button>
+                          </span>
+                        ) : (
+                          <SatirMenu
+                            baslik="Ödeme işlemleri"
+                            ogeler={[
+                              { label: "Düzenle", icon: Pencil, onClick: () => setDuzenlenenOdeme(index) },
+                              { label: "Sil", icon: Trash2, tehlikeli: true, onClick: () => setSilinecekOdeme(index) },
+                            ]}
+                          />
+                        )}
+                      </span>
                     </li>
                   );
                 })}
               </ul>
+              <p className="text-[11px] text-[var(--muted-soft)] mt-1">
+                Silinen ödeme 30 gün Çöp Kutusu&apos;nda durur ve geri alınabilir.
+              </p>
             </div>
           )}
 
@@ -247,6 +297,35 @@ export default function KayitDetayModal({
           {silOnay && <p className="text-[11px] text-[var(--muted)] -mt-2">Silinen kayıt 30 gün boyunca Çöp Kutusu&apos;ndan geri alınabilir.</p>}
         </form>
       </div>
+
+      {/* Outside the form on purpose: its buttons have no type, so inside they would submit the record. */}
+      {odemeDuzenlenen && duzenlenenOdeme !== null && (
+        <AmountModal
+          title="Ödemeyi düzenle"
+          kalan={0}
+          kalanGoster={false}
+          onayEtiketi="Kaydet"
+          hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri}
+          defaultTutar={odemeDuzenlenen.tutar}
+          defaultTarih={odemeDuzenlenen.tarih}
+          defaultSecim={{
+            odemeSekli: odemeDuzenlenen.odemeSekli,
+            bankaHesapId: odemeDuzenlenen.bankaHesapId ?? "",
+            kartAciklama: odemeDuzenlenen.kartAciklama ?? "",
+          }}
+          onClose={() => setDuzenlenenOdeme(null)}
+          onConfirm={async (tutar, secim, tarih) => {
+            try {
+              await odemeSatiriGuncelle(kayit, duzenlenenOdeme, { tutar, tarih, ...secim });
+              setDuzenlenenOdeme(null);
+            } catch (err) {
+              console.error(err);
+              alert("Ödeme güncellenemedi, lütfen tekrar deneyin.");
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

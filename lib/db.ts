@@ -128,6 +128,76 @@ export async function tahsilEt(
   });
 }
 
+// ---- One payment line inside a record (odemeler[]) ----
+// The line's index is its identity, so editing rewrites the whole array and deleting only flags the
+// element. alinanTutar is stored, not derived, so it is recomputed here from the upfront part plus
+// the live lines; that keeps hareketlerOf's pesin calculation exact.
+
+function pesinKismi(kayit: KasaKaydi): number {
+  const canli = (kayit.odemeler ?? []).reduce((s, o) => (o.silindi ? s : s + o.tutar), 0);
+  return kayit.alinanTutar - canli;
+}
+
+async function odemeleriKaydet(kayit: KasaKaydi, odemeler: Odeme[]) {
+  const pesin = pesinKismi(kayit);
+  const alinanTutar = pesin + odemeler.reduce((s, o) => (o.silindi ? s : s + o.tutar), 0);
+  // An archived remainder stays archived; otherwise the status follows the new total.
+  const durum: KasaKaydi["durum"] =
+    kayit.durum === "arsiv"
+      ? "arsiv"
+      : alinanTutar >= kayit.toplamTutar && kayit.toplamTutar > 0
+        ? "tamamlandi"
+        : "aktif";
+  return updateDoc(doc(getDb(), KAYITLAR, kayit.id), { odemeler, alinanTutar, durum, updatedAt: Date.now() });
+}
+
+export async function odemeSatiriGuncelle(
+  kayit: KasaKaydi,
+  index: number,
+  patch: { tutar: number; tarih: string; odemeSekli: Odeme["odemeSekli"]; bankaHesapId?: string; kartAciklama?: string }
+) {
+  await ensureSignedIn();
+  const odemeler = (kayit.odemeler ?? []).map((o, i) => {
+    if (i !== index) return o;
+    // Built from scratch rather than spread over the old line: switching to Nakit has to drop the
+    // old bankaHesapId/kartAciklama, and deleteField() does not work inside an array element.
+    const yeni: Odeme = {
+      tarih: patch.tarih,
+      tutar: patch.tutar,
+      odemeSekli: patch.odemeSekli,
+      ...odemeAlanlari(patch.odemeSekli, patch.bankaHesapId, patch.kartAciklama),
+      createdAt: o.createdAt,
+      ...(o.silindi ? { silindi: true, silinmeTarihi: o.silinmeTarihi } : {}),
+    };
+    return yeni;
+  });
+  return odemeleriKaydet(kayit, odemeler);
+}
+
+export async function odemeSatiriSil(kayit: KasaKaydi, index: number) {
+  await ensureSignedIn();
+  const now = Date.now();
+  const odemeler = (kayit.odemeler ?? []).map((o, i) => (i === index ? { ...o, silindi: true, silinmeTarihi: now } : o));
+  return odemeleriKaydet(kayit, odemeler);
+}
+
+export async function odemeSatiriGeriYukle(kayit: KasaKaydi, index: number) {
+  await ensureSignedIn();
+  // Rebuilt without the two flags, since deleteField() does not reach inside an array element.
+  const odemeler = (kayit.odemeler ?? []).map((o, i) => {
+    if (i !== index) return o;
+    const geri: Odeme = {
+      tarih: o.tarih,
+      tutar: o.tutar,
+      odemeSekli: o.odemeSekli,
+      ...odemeAlanlari(o.odemeSekli, o.bankaHesapId, o.kartAciklama),
+      createdAt: o.createdAt,
+    };
+    return geri;
+  });
+  return odemeleriKaydet(kayit, odemeler);
+}
+
 // Links an unassigned havale to an account: either the record itself or one of its later payments.
 export async function hesapAta(kayit: KasaKaydi, odemeIndex: number | undefined, bankaHesapId: string) {
   await ensureSignedIn();
@@ -444,6 +514,21 @@ export async function updateSiparis(id: string, patch: Partial<Omit<Siparis, "id
 export async function siparisOdemeAl(s: Siparis, odeme: OdemeGirdisi) {
   await ensureSignedIn();
   return addDoc(collection(getDb(), KAYITLAR), siparisOdemesiVerisi(s, odeme));
+}
+
+// A payment on an order is its own Kasa record (toplamTutar = alinanTutar = the payment), so editing
+// it moves both amounts together and it stays "tamamlandi". Deleting it is the usual kayitSil.
+export async function siparisOdemesiGuncelle(id: string, patch: OdemeGirdisi & { tarih: string }) {
+  await ensureSignedIn();
+  return updateKasaKaydi(id, {
+    tarih: patch.tarih,
+    toplamTutar: patch.tutar,
+    alinanTutar: patch.tutar,
+    durum: "tamamlandi",
+    odemeSekli: patch.odemeSekli,
+    bankaHesapId: patch.bankaHesapId,
+    kartAciklama: patch.kartAciklama,
+  });
 }
 
 // "Arşive Gönder" from Alacaklar: the remainder is written off and leaves every open total.

@@ -10,6 +10,11 @@ export interface Odeme {
   bankaHesapId?: string;
   kartAciklama?: string; // only for odemeSekli "kart": where it was charged, e.g. "Ziraat POS"
   createdAt: number;
+  // Soft delete of a single payment line. The element stays in place so the other lines keep their
+  // indexes (hesapAta addresses them by index); hareketlerOf skips it and alinanTutar is reduced by
+  // its amount. Çöp Kutusu lists it for 30 days and can put it back.
+  silindi?: boolean;
+  silinmeTarihi?: number;
 }
 
 export interface KasaKaydi {
