@@ -1,6 +1,11 @@
 # Devam notları
 
-Son güncelleme: 02.11.2026 (ikinci tur, test edildi ve commit edildi)
+Son güncelleme: 03.11.2026 (iş bilgisayarı senkronlandı)
+
+## 03.11.2026 durumu
+
+- İş bilgisayarına `git pull` yapıldı; ev bilgisayarının 02.11 commit'leri (`a6e98a9`, `44f5a2b`, `20afc2e`) çekildi. `npm install` bağımlılıklarda değişiklik bulmadı — iki bilgisayar senkron.
+- **Vercel dağıtımı ve otomatik Drive yedeği çalışıyor** (ayrıntı aşağıda).
 
 ## 02.11.2026'da yapılanlar (ikinci tur, localhost'ta test edildi, onaylandı)
 
@@ -14,8 +19,9 @@ Son güncelleme: 02.11.2026 (ikinci tur, test edildi ve commit edildi)
   - "Toplu telefon ekle" butonu: Excel'den iki sütun (Firma, Telefon) yapıştırma ya da CSV seçme (Google Kişiler dahil), firma adı otomatik eşleştirme, önizleme (eşleşen / eşleşmeyen / zaten telefonu olan — üzerine yazma onayı ile), toplu kaydetme.
   - Telefonlar hangi biçimde girilirse girilsin ("0532…", "532…", "+90 532…") "0532 123 45 67" biçiminde kaydediliyor (`lib/telefonIceAktar.ts`).
 
-### Vercel dağıtımı düzeldi
-- Sorun `CRON_SECRET` ortam değişkenindeki baştaki/sondaki boşluktu; değer düzeltilince build geçti. Son dağıtım **Hazır**, canlı site güncel.
+### Vercel dağıtımı düzeldi (çözüldü)
+- Sorun e-posta doğrulaması değildi: `CRON_SECRET` ortam değişkeninin değerinde baştaki/sondaki boşluk vardı. Değer düzeltilince build geçti. Son dağıtım **Hazır**, canlı site güncel.
+- Otomatik Google Drive yedeği de çalışıyor: son otomatik yedek **02.11.2026 03:06**.
 
 ### Veri düzeltmesi: Ekim 2026 üretim durumu (canlı veride)
 - Ekim 2026 tarihli, "Bitti" durumundaki 169 sipariş "Teslim Edildi" yapıldı (Kasım ve sonrasına dokunulmadı).
@@ -60,29 +66,15 @@ Son güncelleme: 02.11.2026 (ikinci tur, test edildi ve commit edildi)
   - Ekstrede tarih dışında bir sütuna göre sıralanınca Bakiye sütunu gizlenir.
 - **Siparişler → Yazdır / PDF:** A4 yatay, ekrandaki ay, sekme, arama ve sıralamayla birebir çıkar. Sipariş detayında ayrıca **Sipariş Formu** var (büyük görsel ve imza alanı).
 
-## Yarın test edilecekler
-1. **Sekme sayıları (Ekim 2026):** Tümü 242, Üretimde 94, Bitti 148, Ödeme Bekleyen 65 (43 ödenmedi + 22 kısmi), Ödendi 177, Faturası Kesilmeyen 230.
-2. **Kasım 2026'ya geçince:** "Önceki aylardan devreden (94 iş)" görünmeli ve satırlarda "Ekim" rozeti olmalı. Bir Ekim siparişini "Üretimde"ye çevirince sayı 95 olmalı. Alacaklar sayfasında Kasım'da Ekim kalemleri durmalı.
-3. **Uzun ürün adı:** Tam görünüyor mu? Tutar hücresine `17900` yazınca ₺17.900,00 olarak kaydediliyor mu? Üstteki kaydırma çubuğu tabloyu kaydırıyor mu?
-4. **Sıralama:**
-   - Siparişler'de Firma başlığına üç kez tıklayın: A→Z, Z→A, eski sıra. Ç, Ş, Ü ile başlayan firmalar doğru yerde mi?
-   - Sayfayı yenileyince seçilen sıralama korunuyor mu?
-   - KIRAÇ REKLAM ekstresinde Borç başlığına tıklayınca Bakiye sütunu gizleniyor mu?
-5. **Siparişler → Yazdır / PDF:**
-   - Sayfa yatay mı, logo renkli mi, rozetler renkli mi?
-   - Toplamlar ekrandakiyle tutuyor mu?
-   - Kasım'da devreden bölümü ayrı başlıkla çıkıyor mu?
-6. **Sipariş detayı → Sipariş Formu:** Önizlemede sadece form görünmeli. Büyük görsel, açıklama ve "Teslim alan / İmza" alanı olmalı.
+## 31.10 test listesi: doğrulandı
+
+- 31.10.2026'da bırakılan test listesinin tamamı localhost'ta geçti ve onaylandı: ay mantığı (Kasım'a yalnızca "Üretimde" işlerin devretmesi ve ay rozeti), tablo görünümü ve ₺ tutar biçimi, sütun sıralama (Türkçe alfabe dahil), Siparişler → Yazdır / PDF ve Sipariş Formu.
+- Listedeki "Faturası Kesilmeyen" sekmesi 02.11.2026'da kaldırıldığı için o maddedeki sayı artık geçerli değil.
 
 ## Bekleyen işler
-- **İş bilgisayarında git pull:** Ev bilgisayarından yapılan tüm commit'leri (bu dahil) iş bilgisayarına da çekin (`git pull`), ikisi senkron kalsın.
 - **PIN değiştirme:** Ortak kasa hesabının 6 haneli PIN'i değiştirilecek.
 - **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` dosyası — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
-- **Google Drive otomatik yedek:**
-  - Google tarafı hazır: Drive API açık, onay ekranı "In production", OAuth istemcisi ve yenileme jetonu alındı.
-  - Vercel'e beş değişken girildi. `FIREBASE_SERVICE_ACCOUNT` tek satırlık (base64) biçimde.
-  - Vercel dağıtımı artık Hazır olduğuna göre test edilebilir: Ayarlar → **Şimdi Yedek Al**, ardından Vercel → Settings → Cron Jobs → **Run**.
-  - Test başarılı olunca Google Cloud'da client secret'ı yenileyin, çünkü ekran görüntüsüyle sohbete düştü. Yollar: Clients → Panzehir Yedek → Add secret → eskisini Disable ve Delete. Sonra Vercel'de `GOOGLE_CLIENT_SECRET` değerini güncelleyin.
+- **Google Drive client secret'ı yenileme:** Otomatik yedek **çalışıyor** (son otomatik yedek 02.11.2026 03:06), yani Drive kurulumu bitti. Geriye tek iş kaldı: client secret ekran görüntüsüyle sohbete düştüğü için yenilenmeli. Yollar: Google Cloud → Clients → Panzehir Yedek → Add secret → eskisini Disable ve Delete. Sonra Vercel'de `GOOGLE_CLIENT_SECRET` değerini güncelleyip yeniden dağıtın, ertesi gün gece yedeğinin geldiğini doğrulayın.
 - **Excel yedeği isteği:** Gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenebilir (`exceljs` zaten kurulu).
 - **Banka Havalesi açılır listesi:** İstenirse hesap sahibi/banka adını özel tasarım bir açılır liste ile (küçük/soluk banka adı) göstermek — tarayıcının native `<select>`'i buna izin vermiyor.
 
