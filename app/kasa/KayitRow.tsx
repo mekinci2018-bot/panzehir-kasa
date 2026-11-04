@@ -33,6 +33,7 @@ export default function KayitRow({
   kartOnerileri,
   onSave,
   onChange,
+  onOzelIslem,
 }: {
   value: DraftKayit;
   hesaplar: BankaHesabi[];
@@ -44,6 +45,9 @@ export default function KayitRow({
   kartOnerileri: string[];
   onSave: () => void;
   onChange: (patch: Partial<DraftKayit>) => void;
+  // İşlem listesinden Transfer / Mahsup seçilince: satır hücrelerine sığmadıkları için kendi
+  // pencereleri açılır, satırın işlemi olduğu gibi kalır.
+  onOzelIslem: (tur: "transfer" | "mahsup") => void;
 }) {
   function set<K extends keyof DraftKayit>(key: K, v: DraftKayit[K]) {
     onChange({ [key]: v } as Partial<DraftKayit>);
@@ -121,10 +125,16 @@ export default function KayitRow({
         <select
           className={`select-field w-full ${value.yon === "gelen" ? "select-giris" : "select-cikis"}`}
           value={value.yon}
-          onChange={(e) => set("yon", e.target.value as Yon)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "transfer" || v === "mahsup") onOzelIslem(v);
+            else set("yon", v as Yon);
+          }}
         >
           <option value="gelen">Giriş</option>
           <option value="giden">Çıkış</option>
+          <option value="transfer">Transfer…</option>
+          <option value="mahsup">Mahsup…</option>
         </select>
       </td>
       <td className="align-top">

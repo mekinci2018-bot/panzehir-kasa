@@ -7,6 +7,7 @@
 // hem Kasa'dan yapılan ödeme aynı ekstreye düşer ve para iki kez sayılmaz.
 import { formatDate, monthLabel } from "./format";
 import { hareketlerOf } from "./hareketler";
+import { mahsupEtiketi, sayilan } from "./kayit";
 import type { Calisan, KasaKaydi, MaasTuru, PersonelHareketi, PersonelHareketTuru } from "./types";
 
 export const MAAS_TURU_LABEL: Record<MaasTuru, string> = {
@@ -160,9 +161,22 @@ export function personelEkstresi(
   }
 
   // Ödemeler: personelId taşıyan Kasa kayıtlarının para hareketleri (sonradan eklenen ödeme satırları
-  // da kendi tarihinde sayılır).
+  // da kendi tarihinde sayılır). Mahsupta kasadan para çıkmaz ama personelin alacağı kapanır:
+  // üçüncü taraf personele ödediği için sayılan tutar ödeme olarak işlenir.
   for (const k of kayitlar) {
-    if (k.personelId !== c.id) continue;
+    if (k.tur === "mahsup" && k.karsiPersonelId === c.id) {
+      satirlar.push({
+        key: `m-${k.id}`,
+        tarih: k.tarih,
+        aciklama: [mahsupEtiketi(k), k.aciklama].filter(Boolean).join(" · "),
+        tur: "odeme",
+        hakedis: 0,
+        odeme: sayilan(k),
+        kayitId: k.id,
+      });
+      continue;
+    }
+    if (k.personelId !== c.id || k.tur) continue;
     for (const hareket of hareketlerOf(k)) {
       if (hareket.tutar === 0) continue;
       const cikis = hareket.yon === "giden";

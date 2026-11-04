@@ -17,8 +17,18 @@ export interface Odeme {
   silinmeTarihi?: number;
 }
 
+// A record that is not a plain Giriş / Çıkış (Aşama 2):
+//   transfer         — money moved between our own accounts; two legs, one document, no income/expense
+//   mahsup           — a third party paid on our behalf; NO money passes through the till
+//   mahsup-komisyon  — the commission a mahsup cost us, a separate expense document tied by mahsupId
+// All three are saved with alinanTutar = toplamTutar and durum "tamamlandi", so every generic
+// "open amount" filter (Alacaklar, Borçlar, Kasa totals) leaves them alone; what they really do
+// lives in lib/kayit.ts (cariEtkileri) and lib/hareketler.ts (hareketlerOf).
+export type KayitTuru = "transfer" | "mahsup" | "mahsup-komisyon";
+
 export interface KasaKaydi {
   id: string;
+  tur?: KayitTuru; // absent = ordinary Giriş / Çıkış
   tarih: string; // YYYY-MM-DD
   ay: string; // YYYY-MM, derived from tarih
   firma: string; // display name; for linked records the company name at the time of linking
@@ -38,6 +48,17 @@ export interface KasaKaydi {
   odemeler?: Odeme[];
   kaynak?: "veresiye"; // added from Alacaklar/Borçlar as credit, not via a Kasa row
   vadeTarihi?: string; // YYYY-MM-DD, optional due date
+  // ---- tur "transfer": the receiving leg (the paying leg uses odemeSekli / bankaHesapId) ----
+  hedefOdemeSekli?: Exclude<OdemeSekli, "kart">; // Nakit Kasa or a bank account; never Kart / POS
+  hedefBankaHesapId?: string;
+  // ---- tur "mahsup": who received the money (firmaId / firma is the payer) ----
+  karsiFirmaId?: string;
+  karsiPersonelId?: string;
+  karsiFirma?: string; // display name of the receiving side
+  karsiTur?: FirmaTuru | "personel"; // kept on the record so a balance can be read without the firm list
+  sayilanTutar?: number; // what the receiver counted toward our debt; toplamTutar is what was charged
+  // ---- tur "mahsup-komisyon": the mahsup it belongs to; the two are deleted and restored together ----
+  mahsupId?: string;
   yon: Yon;
   durum: KayitDurum;
   arsivTarihi?: number; // when "Arşive Gönder" closed the remaining amount; older archives fall back to updatedAt

@@ -1,5 +1,15 @@
 import { ODEME_SEKLI_LABEL, isoDayOf } from "./format";
 import { hareketlerOf } from "./hareketler";
+import {
+  cariEtkileri,
+  harcamaTutari,
+  komisyonMu,
+  mahsupEtiketi,
+  mahsupMu,
+  ozelKayitMi,
+  sayilan,
+  transferMi,
+} from "./kayit";
 import { siparisHesap } from "./siparis";
 import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "./types";
 
@@ -67,8 +77,38 @@ function acikKalan(k: KasaKaydi): number {
   return k.yon === "gelen" ? kalan : -kalan;
 }
 
+// Mahsup satırları: ödeyenin ekstresinde alacak (bizdeki alacağı azalır), alanın ekstresinde borç
+// (bizim borcumuz azalır). Alan bir gider kalemiyse gider aynı anda doğup kapandığı için iki satır
+// birlikte yazılır ve bakiyeyi değiştirmez.
+function mahsupSatirlari(k: KasaKaydi, firmaId?: string): Omit<EkstreSatiri, "bakiye">[] {
+  const etiket = mahsupEtiketi(k);
+  const aciklamali = (ek: string) => [etiket, k.aciklama, ek].filter(Boolean).join(" · ");
+  if (firmaId && k.karsiFirmaId === firmaId && k.firmaId !== firmaId) {
+    const tutar = sayilan(k);
+    if (k.karsiTur === "gider") {
+      return [
+        { key: `${k.id}-mg`, tarih: k.tarih, aciklama: aciklamali(""), kayitId: k.id, borc: 0, alacak: tutar },
+        { key: `${k.id}-mk`, tarih: k.tarih, aciklama: aciklamali("mahsupla kapandı"), kayitId: k.id, borc: tutar, alacak: 0 },
+      ];
+    }
+    return [{ key: `${k.id}-m`, tarih: k.tarih, aciklama: aciklamali(""), kayitId: k.id, borc: tutar, alacak: 0 }];
+  }
+  return [{ key: `${k.id}-m`, tarih: k.tarih, aciklama: aciklamali(""), kayitId: k.id, borc: 0, alacak: k.toplamTutar }];
+}
+
+// Mahsup komisyonu: gider doğar ve aynı anda mahsupla kapanır, bakiye değişmez.
+function komisyonSatirlari(k: KasaKaydi): Omit<EkstreSatiri, "bakiye">[] {
+  const ad = k.aciklama || "Mahsup komisyonu";
+  return [
+    { key: `${k.id}-k1`, tarih: k.tarih, aciklama: ad, kayitId: k.id, borc: 0, alacak: k.toplamTutar },
+    { key: `${k.id}-k2`, tarih: k.tarih, aciklama: `${ad} · mahsupla kapandı`, kayitId: k.id, borc: k.toplamTutar, alacak: 0 },
+  ];
+}
+
 // Positive: the company owes us (Alacak). Archived ("Arşive Gönder") remainders are written off,
 // so per company this matches Alacaklar / Borçlar exactly. Equals the statement's final balance.
+// Transfer / mahsup records are closed on save (alinan = toplam), so this is 0 for them; their real
+// effect comes from cariEtkileri in lib/kayit.ts.
 export function kayitBakiyesi(k: KasaKaydi): number {
   return k.durum === "arsiv" ? 0 : acikKalan(k);
 }
@@ -98,7 +138,8 @@ export function siparisBakiyesi(s: Siparis, odemeler: Map<string, number>): numb
 export function ekstreOlustur(
   kayitlar: KasaKaydi[],
   siparisler: Siparis[] = [],
-  odemeler: Map<string, number> = new Map()
+  odemeler: Map<string, number> = new Map(),
+  firmaId?: string // mahsupta hangi tarafın ekstresi olduğunu belirler
 ): EkstreSatiri[] {
   const satirlar: Omit<EkstreSatiri, "bakiye">[] = [];
   for (const s of [...siparisler].sort((a, b) => a.createdAt - b.createdAt)) {
@@ -130,6 +171,16 @@ export function ekstreOlustur(
   }
   const sirali = [...kayitlar].sort((a, b) => a.createdAt - b.createdAt);
   for (const k of sirali) {
+    // Transfer hiçbir cariye girmez; mahsup ve komisyonu kendi satırlarını üretir.
+    if (transferMi(k)) continue;
+    if (mahsupMu(k)) {
+      satirlar.push(...mahsupSatirlari(k, firmaId));
+      continue;
+    }
+    if (komisyonMu(k)) {
+      satirlar.push(...komisyonSatirlari(k));
+      continue;
+    }
     const baslik = k.aciklama || (k.yon === "gelen" ? "Satış" : "Alış");
     if (k.toplamTutar && !k.siparisId) {
       satirlar.push({
@@ -199,14 +250,24 @@ export function cariOzetleri(
     }
   }
   for (const k of kayitlar) {
-    const id = k[alan];
-    if (!id) continue;
-    const o = map.get(id) ?? { bakiye: 0, harcama: 0, kayitSayisi: 0, sonTarih: "" };
-    o.bakiye += kayitBakiyesi(k);
-    if (k.yon === "giden") o.harcama += k.toplamTutar;
-    o.kayitSayisi += 1;
-    if (k.tarih > o.sonTarih) o.sonTarih = k.tarih;
-    map.set(id, o);
+    // Her kaydın etkisi tek yerden okunur: normal kayıtta bir taraf, mahsupta iki taraf, transferde hiç.
+    for (const etki of cariEtkileri(k, kayitBakiyesi)) {
+      const id = etki[alan];
+      if (!id) continue;
+      const o = map.get(id) ?? { bakiye: 0, harcama: 0, kayitSayisi: 0, sonTarih: "" };
+      o.bakiye += etki.etki;
+      o.kayitSayisi += 1;
+      if (k.tarih > o.sonTarih) o.sonTarih = k.tarih;
+      map.set(id, o);
+    }
+    // Harcama: gider ödemeleri, mahsup komisyonu ve gider kalemine yapılan mahsup.
+    const harcamaId = komisyonMu(k) || !mahsupMu(k) ? k[alan] : alan === "firmaId" ? k.karsiFirmaId : k.karsiPersonelId;
+    const tutar = harcamaTutari(k, true);
+    if (harcamaId && tutar > 0 && (ozelKayitMi(k) || k.yon === "giden")) {
+      const o = map.get(harcamaId) ?? { bakiye: 0, harcama: 0, kayitSayisi: 0, sonTarih: "" };
+      o.harcama += tutar;
+      map.set(harcamaId, o);
+    }
   }
   return map;
 }

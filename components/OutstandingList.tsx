@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, ChevronRight, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Handshake, Plus } from "lucide-react";
 import { kartOnerileri, useBankaHesaplari, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { addKasaKaydi, arsiveGonder, siparisKapat, tahsilEt } from "@/lib/db";
 import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
@@ -20,6 +20,9 @@ import YukleniyorSatiri from "./YukleniyorSatiri";
 import FirmaLink from "./FirmaLink";
 import { SiparisOdemeModal } from "./SiparisDetayModal";
 import { SiraTh } from "./SiraBasligi";
+import SatirMenu from "./SatirMenu";
+import MahsupModal from "./MahsupModal";
+import type { FirmaSecimi } from "./FirmaSecici";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 // One open amount: a Kasa record's unpaid part, or an order's remainder (customers only).
@@ -104,6 +107,7 @@ export default function OutstandingList({
   const [adding, setAdding] = useState(false);
   const [ay, setAy] = useState(currentMonthKey);
   const [acikGruplar, setAcikGruplar] = useState<string[]>([]);
+  const [mahsupFor, setMahsupFor] = useState<{ odeyen?: FirmaSecimi; alan?: FirmaSecimi } | null>(null);
 
   // Earliest due first; records without a due date fall back to their entry date.
   const items = useMemo(() => {
@@ -201,6 +205,22 @@ export default function OutstandingList({
     const boy = kucuk ? "!py-1 !px-2.5 !text-[11px]" : "!py-1.5 !px-3 !text-xs";
     return (
       <>
+        {/* Mahsup: alacakta bu firma ödeyen, borçta alan taraf olarak önceden seçili gelir. */}
+        <SatirMenu
+          ogeler={[
+            {
+              label: "Mahsup",
+              icon: Handshake,
+              onClick: () =>
+                setMahsupFor(
+                  yon === "gelen"
+                    ? { odeyen: { firmaId: k.firmaId ?? "", personelId: k.personelId, firma: k.firma } }
+                    : { alan: { firmaId: k.firmaId ?? "", personelId: k.personelId, firma: k.firma } }
+                ),
+            },
+          ]}
+          baslik="Diğer işlemler"
+        />
         {k.vade && k.kayit ? (
           <button
             className={`btn-primary ${boy} whitespace-nowrap`}
@@ -559,6 +579,8 @@ export default function OutstandingList({
           }}
         />
       )}
+
+      {mahsupFor && <MahsupModal baslangic={mahsupFor} onClose={() => setMahsupFor(null)} />}
 
       {siparisFor?.siparis && (
         <SiparisOdemeModal

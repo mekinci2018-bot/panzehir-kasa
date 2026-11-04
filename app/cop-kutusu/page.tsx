@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaGeriYukle, kayitGeriYukle, odemeSatiriGeriYukle, siparisGeriYukle } from "@/lib/db";
+import { KAYIT_TURU_LABEL, sayilan } from "@/lib/kayit";
 import type { KasaKaydi, Odeme } from "@/lib/types";
 import { FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
@@ -75,20 +76,33 @@ export default function CopKutusuPage() {
         .filter((k) => k.siparisId && silinenSiparisler.some((s) => s.id === k.siparisId && s.silinmeTarihi === k.silinmeTarihi))
         .map((k) => k.id)
     );
+    // Mahsupla birlikte silinen komisyon gideri de mahsupla birlikte geri gelir, ayrı listelenmez.
+    const mahsupIleSilinen = new Set(
+      silinenKayitlar
+        .filter((k) => k.tur === "mahsup-komisyon" && silinenKayitlar.some((m) => m.id === k.mahsupId))
+        .map((k) => k.id)
+    );
     const kalemler: CopKalemi[] = [
       ...silinenKayitlar
-        .filter((k) => !siparisIleSilinen.has(k.id))
-        .map((k) => ({
-          id: k.id,
-          tarih: k.tarih,
-          firma: k.firma,
-          aciklama: k.aciklama,
-          yon: k.yon,
-          odeme: [ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli, k.kartAciklama].filter(Boolean).join(" · "),
-          tutar: k.toplamTutar,
-          silinmeTarihi: k.silinmeTarihi ?? 0,
-          geriYukle: () => kayitGeriYukle(k.id),
-        })),
+        .filter((k) => !siparisIleSilinen.has(k.id) && !mahsupIleSilinen.has(k.id))
+        .map((k) => {
+          const komisyonIds = silinenKayitlar.filter((x) => x.tur === "mahsup-komisyon" && x.mahsupId === k.id).map((x) => x.id);
+          return {
+            id: k.id,
+            tarih: k.tarih,
+            firma: k.tur === "mahsup" ? `${k.firma} → ${k.karsiFirma ?? "—"}` : k.firma,
+            aciklama: [k.tur ? KAYIT_TURU_LABEL[k.tur] : "", k.aciklama].filter(Boolean).join(" · "),
+            yon: k.yon,
+            odeme: k.tur
+              ? komisyonIds.length
+                ? "komisyon gideriyle birlikte"
+                : ""
+              : [ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli, k.kartAciklama].filter(Boolean).join(" · "),
+            tutar: k.tur === "mahsup" ? sayilan(k) : k.toplamTutar,
+            silinmeTarihi: k.silinmeTarihi ?? 0,
+            geriYukle: () => kayitGeriYukle(k.id, komisyonIds),
+          };
+        }),
       ...silinenSiparisler.map((s) => {
         const odemeIds = silinenKayitlar.filter((k) => k.siparisId === s.id && k.silinmeTarihi === s.silinmeTarihi).map((k) => k.id);
         return {

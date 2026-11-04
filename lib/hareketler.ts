@@ -14,9 +14,32 @@ export interface Hareket {
   bankaHesapId?: string;
   kartAciklama?: string;
   odemeIndex?: number; // index in odemeler; absent for the upfront (peşin) part
+  bacak?: "kaynak" | "hedef"; // transfer: which leg of the transfer this movement is
 }
 
 export function hareketlerOf(k: KasaKaydi): Hareket[] {
+  // Mahsup (ve ona bağlı komisyon belgesi) kasadan para geçirmez: hiç hareket üretmez, bu yüzden
+  // Nakit / Banka / Kart-POS ve Toplam Kasa değişmez.
+  if (k.tur === "mahsup" || k.tur === "mahsup-komisyon") return [];
+  // Transfer tek belgedir, iki hareket üretir: kaynakta çıkış, hedefte giriş. Toplam kasa değişmez,
+  // iki hesabın hareketlerinde görünür; tek belge olduğu için silme / geri getirme atomiktir.
+  if (k.tur === "transfer") {
+    const ortak = { kayitId: k.id, firma: k.firma, aciklama: k.aciklama, tutar: k.toplamTutar, tarih: k.tarih };
+    return [
+      { ...ortak, yon: "giden", odemeSekli: k.odemeSekli, bankaHesapId: k.bankaHesapId, bacak: "kaynak" },
+      {
+        ...ortak,
+        yon: "gelen",
+        odemeSekli: k.hedefOdemeSekli ?? "nakit",
+        bankaHesapId: k.hedefBankaHesapId,
+        bacak: "hedef",
+      },
+    ];
+  }
+  return normalHareketler(k);
+}
+
+function normalHareketler(k: KasaKaydi): Hareket[] {
   const odemeler = k.odemeler ?? [];
   // A payment line sent to Çöp Kutusu moves no money, but it keeps its slot in the array so the
   // live lines' odemeIndex stays valid.

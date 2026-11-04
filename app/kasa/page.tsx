@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowLeftRight, Handshake } from "lucide-react";
+import TransferModal from "@/components/TransferModal";
+import MahsupModal from "@/components/MahsupModal";
+import SatirMenu from "@/components/SatirMenu";
+import { KAYIT_TURU_LABEL, mahsupEtiketi, ozelKayitMi, sayilan, transferMi } from "@/lib/kayit";
 import StatStrip from "@/components/StatStrip";
 import PageHeader from "@/components/PageHeader";
 import KayitDetayModal from "@/components/KayitDetayModal";
@@ -24,6 +28,7 @@ import { tumHareketler, signed } from "@/lib/hareketler";
 import { siparisWaMesaji } from "@/lib/whatsapp";
 import { ODEME_SEKLI_LABEL, bakiyeEtiketi, currentMonthKey, formatDate, formatTL, isoDayOf, todayISO } from "@/lib/format";
 import type { BankaHesabi, Firma, KasaKaydi } from "@/lib/types";
+import type { FirmaSecimi } from "@/components/FirmaSecici";
 import KayitRow, { type DraftKayit } from "./KayitRow";
 
 const DRAFT_COUNT = 5;
@@ -73,6 +78,9 @@ export default function KasaPage() {
   const [odemeSiparisId, setOdemeSiparisId] = useState<string | null>(null);
   const [telefonFirma, setTelefonFirma] = useState<Firma | null>(null);
   const [ozetAyi, setOzetAyi] = useState(currentMonthKey);
+  const [transferAcik, setTransferAcik] = useState(false);
+  // Mahsup penceresi: satırdan açılınca ilgili taraf önceden seçili gelir.
+  const [mahsup, setMahsup] = useState<{ odeyen?: FirmaSecimi; alan?: FirmaSecimi } | null>(null);
 
   useEffect(() => () => {
     if (geriAlTimer.current) clearTimeout(geriAlTimer.current);
@@ -117,7 +125,8 @@ export default function KasaPage() {
       else kartPos += signed(h);
     }
     for (const k of kayitlar) {
-      if (k.durum !== "aktif") continue;
+      // Transfer / mahsup kayıtları kapalı kaydedilir (alınan = toplam), yine de açıkça atlanıyor.
+      if (k.durum !== "aktif" || ozelKayitMi(k)) continue;
       const kalan = k.toplamTutar - k.alinanTutar;
       if (kalan <= 0) continue;
       if (k.yon === "gelen") toplamAlacak += kalan;
@@ -235,11 +244,21 @@ export default function KasaPage() {
 
   return (
     <div className="page-enter flex flex-col gap-8">
-      <PageHeader
-        title="Kasa"
-        description="İşlemleri Excel'de yazar gibi girin. Tab ile hücreler arasında gezin, Enter ile kaydedin; kayıt Arşiv'e gider."
-        showGreeting
-      />
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <PageHeader
+          title="Kasa"
+          description="İşlemleri Excel'de yazar gibi girin. Tab ile hücreler arasında gezin, Enter ile kaydedin; kayıt Arşiv'e gider."
+          showGreeting
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn-secondary inline-flex items-center gap-1.5" onClick={() => setTransferAcik(true)}>
+            <ArrowLeftRight className="w-4 h-4" /> Transfer
+          </button>
+          <button className="btn-secondary inline-flex items-center gap-1.5" onClick={() => setMahsup({})}>
+            <Handshake className="w-4 h-4" /> Mahsup
+          </button>
+        </div>
+      </div>
 
       <StatStrip
         items={[
@@ -325,6 +344,13 @@ export default function KasaPage() {
                   kartOnerileri={oneriler}
                   onSave={() => saveDraft(s.key)}
                   onChange={(patch) => updateDraft(s.key, patch)}
+                  onOzelIslem={(tur) =>
+                    tur === "transfer"
+                      ? setTransferAcik(true)
+                      : setMahsup({
+                          odeyen: s.value.firmaId ? { firmaId: s.value.firmaId, firma: s.value.firma } : undefined,
+                        })
+                  }
                 />
               ))}
             </tbody>
@@ -335,9 +361,36 @@ export default function KasaPage() {
         </div>
       </div>
 
-      <BugunGirilenler items={bugunGirilenler} loading={loading} hesaplar={hesaplar} onSelect={setDetayId} />
+      <BugunGirilenler
+        items={bugunGirilenler}
+        loading={loading}
+        hesaplar={hesaplar}
+        onSelect={setDetayId}
+        onMahsup={(k) =>
+          setMahsup({
+            odeyen:
+              k.yon === "gelen" && (k.firmaId || k.personelId)
+                ? { firmaId: k.firmaId ?? "", personelId: k.personelId, firma: k.firma }
+                : undefined,
+            alan:
+              k.yon === "giden" && (k.firmaId || k.personelId)
+                ? { firmaId: k.firmaId ?? "", personelId: k.personelId, firma: k.firma }
+                : undefined,
+          })
+        }
+      />
 
-      {detay && (
+      {/* Transfer ve mahsup kendi pencerelerinde düzenlenir. */}
+      {detay && transferMi(detay) && <TransferModal key={detay.id} kayit={detay} onClose={() => setDetayId(null)} />}
+      {detay && detay.tur === "mahsup" && (
+        <MahsupModal
+          key={detay.id}
+          kayit={detay}
+          komisyonId={kayitlar.find((k) => k.tur === "mahsup-komisyon" && k.mahsupId === detay.id)?.id ?? null}
+          onClose={() => setDetayId(null)}
+        />
+      )}
+      {detay && !transferMi(detay) && detay.tur !== "mahsup" && (
         <KayitDetayModal
           key={detay.id}
           kayit={detay}
@@ -380,6 +433,10 @@ export default function KasaPage() {
         />
       )}
 
+      {transferAcik && <TransferModal onClose={() => setTransferAcik(false)} />}
+
+      {mahsup && <MahsupModal baslangic={mahsup} onClose={() => setMahsup(null)} />}
+
       {geriAl && (
         <div className="toast-in fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 rounded-xl bg-[var(--ink)] text-white pl-4 pr-2 py-2 text-sm shadow-[var(--shadow-pop)]">
           <span>Arşive kaydedildi</span>
@@ -406,11 +463,13 @@ function BugunGirilenler({
   loading,
   hesaplar,
   onSelect,
+  onMahsup,
 }: {
   items: KasaKaydi[];
   loading: boolean;
   hesaplar: BankaHesabi[];
   onSelect: (id: string) => void;
+  onMahsup: (k: KasaKaydi) => void;
 }) {
   const { sira, sirala: siraDegistir } = useSiralama("kasa.bugun");
   const sirali = useMemo(() => sirala(items, sira, BUGUN_SUTUNLARI), [items, sira]);
@@ -439,30 +498,67 @@ function BugunGirilenler({
         <ul className="flex flex-col divide-y divide-[var(--border)] -mx-2">
           {sirali.map((k) => {
             const hesap = hesaplar.find((h) => h.id === k.bankaHesapId);
+            const hedefHesap = hesaplar.find((h) => h.id === k.hedefBankaHesapId);
             const odeme = [ODEME_SEKLI_LABEL[k.odemeSekli], hesap ? hesapEtiketi(hesap) : k.kartAciklama]
               .filter(Boolean)
               .join(" · ");
             const saat = new Date(k.createdAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+            // Transfer: iki bacak tek satırda; mahsup: iki taraf ve sayılan tutar. İkisi de ±
+            // gösterilmez, çünkü kasayı artırıp azaltmazlar.
+            const ozel = ozelKayitMi(k);
+            const transferYazi = transferMi(k)
+              ? `${hesap ? hesapEtiketi(hesap) : "Nakit Kasa"} → ${hedefHesap ? hesapEtiketi(hedefHesap) : "Nakit Kasa"}`
+              : "";
             return (
               <li key={k.id}>
                 <div
                   role="button"
                   tabIndex={0}
-                  className="w-full text-left px-2 py-2 rounded-lg hover:bg-[var(--surface-hover)] flex items-center gap-4 text-sm transition-colors cursor-pointer"
+                  className="w-full text-left px-2 py-2 rounded-lg hover:bg-[var(--surface-hover)] flex items-center gap-3 text-sm transition-colors cursor-pointer"
                   onClick={() => onSelect(k.id)}
                   onKeyDown={(e) => e.key === "Enter" && onSelect(k.id)}
                 >
                   <span className="tabular text-xs text-[var(--muted)] w-10 shrink-0">{saat}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate"><FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" /></span>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {transferMi(k) ? (
+                        <span className="font-medium truncate">Transfer</span>
+                      ) : (
+                        <FirmaLink
+                          firmaId={k.firmaId}
+                          personelId={k.personelId}
+                          ad={k.firma}
+                          className="font-medium truncate"
+                        />
+                      )}
+                      {ozel && (
+                        <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] shrink-0">
+                          {KAYIT_TURU_LABEL[k.tur!]}
+                        </span>
+                      )}
+                    </span>
                     <span className="text-xs text-[var(--muted)] truncate block">
-                      {[k.aciklama, odeme].filter(Boolean).join(" · ")}
+                      {k.tur === "mahsup"
+                        ? [mahsupEtiketi(k), k.aciklama].filter(Boolean).join(" · ")
+                        : [transferYazi || k.aciklama, transferYazi ? k.aciklama : odeme].filter(Boolean).join(" · ")}
                     </span>
                   </span>
-                  <span className={`tabular font-medium shrink-0 ${k.yon === "gelen" ? "text-[var(--accent-green)]" : ""}`}>
-                    {k.yon === "gelen" ? "+" : "−"}
-                    {formatTL(k.toplamTutar)}
+                  <span
+                    className={`tabular font-medium shrink-0 ${
+                      ozel ? "text-[var(--muted)]" : k.yon === "gelen" ? "text-[var(--accent-green)]" : ""
+                    }`}
+                  >
+                    {ozel ? "" : k.yon === "gelen" ? "+" : "−"}
+                    {formatTL(k.tur === "mahsup" ? sayilan(k) : k.toplamTutar)}
                   </span>
+                  {!ozel && (k.firmaId || k.personelId) && (
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <SatirMenu
+                        ogeler={[{ label: "Mahsup", icon: Handshake, onClick: () => onMahsup(k) }]}
+                        baslik="Diğer işlemler"
+                      />
+                    </span>
+                  )}
                 </div>
               </li>
             );

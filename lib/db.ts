@@ -214,19 +214,25 @@ export async function arsiveGonder(id: string) {
   return updateDoc(doc(getDb(), KAYITLAR, id), { durum: "arsiv", arsivTarihi: now, updatedAt: now });
 }
 
-// Records are never physically deleted by the user; they go to Çöp Kutusu.
-export async function kayitSil(id: string) {
+// Records are never physically deleted by the user; they go to Çöp Kutusu. `ekIds` carries the
+// documents that must go with it — a mahsup takes its commission document along, so the two can
+// never be separated.
+export async function kayitSil(id: string, ekIds: string[] = []) {
   await ensureSignedIn();
-  return updateDoc(doc(getDb(), KAYITLAR, id), { silindi: true, silinmeTarihi: Date.now() });
+  const veri = { silindi: true, silinmeTarihi: Date.now() };
+  if (ekIds.length === 0) return updateDoc(doc(getDb(), KAYITLAR, id), veri);
+  const batch = writeBatch(getDb());
+  for (const x of [id, ...ekIds]) batch.update(doc(getDb(), KAYITLAR, x), veri);
+  return batch.commit();
 }
 
-export async function kayitGeriYukle(id: string) {
+export async function kayitGeriYukle(id: string, ekIds: string[] = []) {
   await ensureSignedIn();
-  return updateDoc(doc(getDb(), KAYITLAR, id), {
-    silindi: deleteField(),
-    silinmeTarihi: deleteField(),
-    updatedAt: Date.now(),
-  });
+  const veri = { silindi: deleteField(), silinmeTarihi: deleteField(), updatedAt: Date.now() };
+  if (ekIds.length === 0) return updateDoc(doc(getDb(), KAYITLAR, id), veri);
+  const batch = writeBatch(getDb());
+  for (const x of [id, ...ekIds]) batch.update(doc(getDb(), KAYITLAR, x), veri);
+  return batch.commit();
 }
 
 // Only for "Geri al" right after saving: the entry is taken back as if it was never saved.
@@ -628,6 +634,200 @@ export async function updateCalisan(id: string, patch: Partial<Calisan>) {
 export async function deleteCalisan(id: string) {
   await ensureSignedIn();
   return deleteDoc(doc(getDb(), CALISANLAR, id));
+}
+
+// ---- Aşama 2: Hesaplar arası transfer (virman) ----
+// Tek belge, iki bacak: kaynak (odemeSekli / bankaHesapId) ve hedef (hedefOdemeSekli /
+// hedefBankaHesapId). alinanTutar = toplamTutar ve durum "tamamlandi" olduğu için hiçbir "açık
+// kalem" listesine girmez; firmaId olmadığı için cariye / ekstreye / Alacaklar'a hiç dokunmaz.
+
+export type TransferBacagi = { odemeSekli: "nakit" | "havale"; bankaHesapId?: string };
+
+export async function transferYap(input: {
+  tarih: string;
+  tutar: number;
+  kaynak: TransferBacagi;
+  hedef: TransferBacagi;
+  aciklama?: string;
+}) {
+  await ensureSignedIn();
+  const simdi = Date.now();
+  return addDoc(collection(getDb(), KAYITLAR), {
+    tur: "transfer",
+    tarih: input.tarih,
+    ay: monthKeyOf(input.tarih),
+    firma: "Transfer",
+    aciklama: input.aciklama?.trim() ?? "",
+    toplamTutar: input.tutar,
+    alinanTutar: input.tutar,
+    odemeSekli: input.kaynak.odemeSekli,
+    ...(input.kaynak.bankaHesapId ? { bankaHesapId: input.kaynak.bankaHesapId } : {}),
+    hedefOdemeSekli: input.hedef.odemeSekli,
+    ...(input.hedef.bankaHesapId ? { hedefBankaHesapId: input.hedef.bankaHesapId } : {}),
+    yon: "giden",
+    durum: "tamamlandi",
+    createdAt: simdi,
+    updatedAt: simdi,
+  });
+}
+
+export async function transferGuncelle(
+  id: string,
+  input: { tarih: string; tutar: number; kaynak: TransferBacagi; hedef: TransferBacagi; aciklama?: string }
+) {
+  await ensureSignedIn();
+  return updateDoc(doc(getDb(), KAYITLAR, id), {
+    tarih: input.tarih,
+    ay: monthKeyOf(input.tarih),
+    aciklama: input.aciklama?.trim() ?? "",
+    toplamTutar: input.tutar,
+    alinanTutar: input.tutar,
+    odemeSekli: input.kaynak.odemeSekli,
+    bankaHesapId: input.kaynak.bankaHesapId ?? deleteField(),
+    hedefOdemeSekli: input.hedef.odemeSekli,
+    hedefBankaHesapId: input.hedef.bankaHesapId ?? deleteField(),
+    updatedAt: Date.now(),
+  });
+}
+
+// ---- Aşama 2: Mahsup (aracılı ödeme) ----
+// Para kasaya hiç girmez: müşterinin kartı tedarikçinin POS'undan çekilir ya da müşteri doğrudan
+// tedarikçinin hesabına atar. Belge iki cariyi birden etkiler (lib/kayit.ts cariEtkileri) ve hiç
+// para hareketi üretmez (lib/hareketler.ts).
+//
+// Çekilen ile karşı tarafa sayılan tutar farklıysa aradaki komisyon, mahsupId ile bağlı AYRI bir
+// gider belgesi olarak yazılır: böylece Arşiv'in Harcama sekmesi ve POS komisyonu kaleminin
+// ekstresi hiç değişmeden çalışır. İkisi birlikte silinir, birlikte geri gelir.
+
+export const KOMISYON_KALEMI = "POS KOMİSYONU";
+
+export interface MahsupGirdisi {
+  tarih: string;
+  odeyen: { firmaId?: string; personelId?: string; ad: string };
+  alan: { firmaId?: string; personelId?: string; ad: string; tur: FirmaTuru | "personel" };
+  tutar: number; // çekilen
+  sayilanTutar: number; // karşı tarafa sayılan
+  odemeSekli: KasaKaydi["odemeSekli"];
+  bankaHesapId?: string;
+  kartAciklama?: string; // "nereden çekildi" — yalnızca bilgi
+  aciklama?: string;
+}
+
+function mahsupVerisi(input: MahsupGirdisi) {
+  return {
+    tur: "mahsup" as const,
+    tarih: input.tarih,
+    ay: monthKeyOf(input.tarih),
+    firma: input.odeyen.ad,
+    ...(input.odeyen.firmaId ? { firmaId: input.odeyen.firmaId } : {}),
+    ...(input.odeyen.personelId ? { personelId: input.odeyen.personelId } : {}),
+    karsiFirma: input.alan.ad,
+    ...(input.alan.firmaId ? { karsiFirmaId: input.alan.firmaId } : {}),
+    ...(input.alan.personelId ? { karsiPersonelId: input.alan.personelId } : {}),
+    karsiTur: input.alan.tur,
+    aciklama: input.aciklama?.trim() ?? "",
+    toplamTutar: input.tutar,
+    alinanTutar: input.tutar, // açık kalem sayılmasın
+    sayilanTutar: input.sayilanTutar,
+    odemeSekli: input.odemeSekli,
+    ...odemeAlanlari(input.odemeSekli, input.bankaHesapId, input.kartAciklama),
+    yon: "gelen" as const,
+    durum: "tamamlandi" as const,
+  };
+}
+
+function komisyonVerisi(input: {
+  mahsupId: string;
+  tarih: string;
+  tutar: number;
+  firma: Pick<Firma, "id" | "ad">;
+  karsi: string;
+}) {
+  return {
+    tur: "mahsup-komisyon" as const,
+    mahsupId: input.mahsupId,
+    tarih: input.tarih,
+    ay: monthKeyOf(input.tarih),
+    firma: input.firma.ad,
+    firmaId: input.firma.id,
+    aciklama: `Mahsup komisyonu · ${input.karsi}`,
+    toplamTutar: input.tutar,
+    alinanTutar: input.tutar,
+    odemeSekli: "nakit" as const,
+    yon: "giden" as const,
+    durum: "tamamlandi" as const,
+  };
+}
+
+// POS komisyonu gider kalemi: yoksa oluşturulur (firma adı kilidiyle, Firmalar'daki diğer kalemler gibi).
+export async function komisyonKalemiBulVeyaOlustur(firmalar: Firma[]): Promise<Firma> {
+  const anahtar = firmaAnahtari(KOMISYON_KALEMI);
+  const varOlan = firmalar.find((f) => f.anahtar === anahtar && !f.silindi);
+  if (varOlan) return varOlan;
+  try {
+    return await addFirma(KOMISYON_KALEMI, firmalar, { tur: "gider" });
+  } catch (err) {
+    // Aynı anda iki yerden oluşturulmaya çalışılırsa var olanı kullan.
+    if (err instanceof FirmaZatenVar) return err.firma;
+    throw err;
+  }
+}
+
+export async function mahsupKaydet(input: MahsupGirdisi, komisyonKalemi: Firma | null) {
+  await ensureSignedIn();
+  const fark = input.tutar - input.sayilanTutar;
+  const simdi = Date.now();
+  const ref = doc(collection(getDb(), KAYITLAR));
+  const batch = writeBatch(getDb());
+  batch.set(ref, { ...mahsupVerisi(input), createdAt: simdi, updatedAt: simdi });
+  if (fark > 0.005) {
+    if (!komisyonKalemi) throw new Error("Komisyon gider kalemi bulunamadı.");
+    batch.set(doc(collection(getDb(), KAYITLAR)), {
+      ...komisyonVerisi({ mahsupId: ref.id, tarih: input.tarih, tutar: fark, firma: komisyonKalemi, karsi: input.alan.ad }),
+      createdAt: simdi,
+      updatedAt: simdi,
+    });
+  }
+  await batch.commit();
+  return ref;
+}
+
+// Düzenleme: sayılan tutar değişip fark kapanırsa komisyon belgesi silinir, fark yeniden açılırsa
+// yeniden yazılır; ikisi hep tutarlı kalır.
+export async function mahsupGuncelle(
+  id: string,
+  input: MahsupGirdisi,
+  mevcutKomisyonId: string | null,
+  komisyonKalemi: Firma | null
+) {
+  await ensureSignedIn();
+  const fark = input.tutar - input.sayilanTutar;
+  const batch = writeBatch(getDb());
+  batch.update(doc(getDb(), KAYITLAR, id), {
+    ...mahsupVerisi(input),
+    bankaHesapId: input.odemeSekli === "havale" && input.bankaHesapId ? input.bankaHesapId : deleteField(),
+    kartAciklama: input.odemeSekli === "kart" && input.kartAciklama?.trim() ? input.kartAciklama.trim() : deleteField(),
+    karsiFirmaId: input.alan.firmaId ?? deleteField(),
+    karsiPersonelId: input.alan.personelId ?? deleteField(),
+    personelId: input.odeyen.personelId ?? deleteField(),
+    firmaId: input.odeyen.firmaId ?? deleteField(),
+    updatedAt: Date.now(),
+  });
+  if (fark > 0.005) {
+    if (!komisyonKalemi) throw new Error("Komisyon gider kalemi bulunamadı.");
+    const veri = komisyonVerisi({
+      mahsupId: id,
+      tarih: input.tarih,
+      tutar: fark,
+      firma: komisyonKalemi,
+      karsi: input.alan.ad,
+    });
+    if (mevcutKomisyonId) batch.update(doc(getDb(), KAYITLAR, mevcutKomisyonId), { ...veri, updatedAt: Date.now() });
+    else batch.set(doc(collection(getDb(), KAYITLAR)), { ...veri, createdAt: Date.now(), updatedAt: Date.now() });
+  } else if (mevcutKomisyonId) {
+    batch.delete(doc(getDb(), KAYITLAR, mevcutKomisyonId));
+  }
+  return batch.commit();
 }
 
 // ---- Personel maaş carisi (Aşama 4) ----

@@ -21,6 +21,7 @@ import {
   useSiparisler,
 } from "@/lib/hooks";
 import { MAAS_TURU_LABEL, maasTuru, personelBorcuToplami } from "@/lib/personel";
+import { cariEtkileri, ozelKayitMi } from "@/lib/kayit";
 import { tahsilEt } from "@/lib/db";
 import { FIRMA_TURU_LABEL, firmaTuru, kayitBakiyesi, siparisBakiyesi } from "@/lib/firma";
 import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
@@ -203,8 +204,17 @@ export default function GenelDurumPage() {
 
     for (const k of kayitlar) {
       if (!k.firmaId && !k.personelId && !k.firma) continue;
+      // Bakiye etkisi tek yerden: normal kayıtta bir taraf, mahsupta iki taraf, transferde hiç.
+      for (const etki of cariEtkileri(k, kayitBakiyesi)) {
+        if (!etki.firmaId && !etki.personelId) continue;
+        const hedef =
+          etki.firmaId === k.firmaId || etki.personelId === k.personelId
+            ? al(k.firma, k.firmaId, k.personelId)
+            : al(k.karsiFirma ?? "—", etki.firmaId, etki.personelId);
+        hedef.bakiye += etki.etki;
+      }
+      if (ozelKayitMi(k)) continue;
       const c = al(k.firma, k.firmaId, k.personelId);
-      c.bakiye += kayitBakiyesi(k);
       const kalan = k.toplamTutar - k.alinanTutar;
       if (k.durum !== "aktif" || kalan <= EPS) continue;
       if (k.yon === "gelen") {

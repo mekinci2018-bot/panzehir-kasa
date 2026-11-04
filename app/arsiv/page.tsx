@@ -6,11 +6,14 @@ import { kartOnerileri, useBankaHesaplari, useFirmalar, useKasaKayitlari } from 
 import { ODEME_SEKLI_LABEL, currentMonthKey, formatDate, formatTL, monthLabel } from "@/lib/format";
 import { aydaMi, aylikKasa, kisaAyEtiketi } from "@/lib/donem";
 import { firmaAnahtari, firmaTuru } from "@/lib/firma";
+import { KAYIT_TURU_LABEL, harcamaTutari, komisyonMu, mahsupMu, ozelKayitMi, sayilan, transferMi } from "@/lib/kayit";
 import type { Firma, KasaKaydi, OdemeSekli } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 import KayitDetayModal from "@/components/KayitDetayModal";
+import TransferModal from "@/components/TransferModal";
+import MahsupModal from "@/components/MahsupModal";
 import FirmaLink from "@/components/FirmaLink";
 import MonthNav from "@/components/MonthNav";
 import AyKasaOzeti from "@/components/AyKasaOzeti";
@@ -18,7 +21,7 @@ import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 import { SiraTh } from "@/components/SiraBasligi";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
-type Sekme = "tumu" | "gelen" | "giden" | "harcama" | "tedarikci" | "personel";
+type Sekme = "tumu" | "gelen" | "giden" | "harcama" | "tedarikci" | "personel" | "transfer" | "mahsup";
 
 const SEKMELER: { id: Sekme; label: string }[] = [
   { id: "tumu", label: "Tümü" },
@@ -27,29 +30,44 @@ const SEKMELER: { id: Sekme; label: string }[] = [
   { id: "harcama", label: "Harcama" },
   { id: "tedarikci", label: "Tedarikçi Ödemeleri" },
   { id: "personel", label: "Personel" },
+  { id: "transfer", label: "Transfer" },
+  { id: "mahsup", label: "Mahsup" },
 ];
 
 const CIPLER: OdemeSekli[] = ["nakit", "kart", "havale"];
 const SEKME_ANAHTARI = "arsiv.sekme";
 const CIP_ANAHTARI = "arsiv.cipler";
 
-// Harcama: outgoing to expense items (Kira, Yakıt…); Tedarikçi: outgoing to suppliers; Personel: to staff.
+// Harcama: outgoing to expense items (Kira, Yakıt…); Tedarikçi: outgoing to suppliers; Personel: to
+// staff. Transfer ve mahsup gelir/gider olmadığı için Gelen ve Giden sekmelerine hiç girmez; mahsup
+// komisyonu ve gider kalemine yapılan mahsup Harcama'da sayılır (lib/kayit.ts harcamaTutari).
 function sekmedeMi(sekme: Sekme, k: KasaKaydi, firmalar: Map<string, Firma>): boolean {
   const firma = k.firmaId ? firmalar.get(k.firmaId) : undefined;
   switch (sekme) {
     case "tumu":
       return true;
     case "gelen":
-      return k.yon === "gelen";
+      return !ozelKayitMi(k) && k.yon === "gelen";
     case "giden":
-      return k.yon === "giden";
+      return !ozelKayitMi(k) && k.yon === "giden";
     case "harcama":
-      return k.yon === "giden" && !!firma && firmaTuru(firma) === "gider";
+      return harcamaTutari(k, !!firma && firmaTuru(firma) === "gider") > 0;
     case "tedarikci":
-      return k.yon === "giden" && !!firma && firmaTuru(firma) === "tedarikci";
+      return !ozelKayitMi(k) && k.yon === "giden" && !!firma && firmaTuru(firma) === "tedarikci";
     case "personel":
-      return k.yon === "giden" && !!k.personelId;
+      return !ozelKayitMi(k) && k.yon === "giden" && !!k.personelId;
+    case "transfer":
+      return transferMi(k);
+    case "mahsup":
+      return mahsupMu(k) || komisyonMu(k);
   }
+}
+
+// Sekme toplamlarında ve listede gösterilen tutar: mahsupta karşı tarafa sayılan tutar, diğerlerinde
+// belgenin kendi tutarı. Harcama sekmesinde gider olarak sayılan tutar kullanılır.
+function sekmeTutari(sekme: Sekme, k: KasaKaydi, giderMi: boolean): number {
+  if (sekme === "harcama") return harcamaTutari(k, giderMi);
+  return mahsupMu(k) ? sayilan(k) : k.toplamTutar;
 }
 
 // Durum: Açık → Tamamlandı → Kapatıldı.
@@ -126,7 +144,13 @@ export default function ArsivPage() {
     const m = {} as Record<Sekme, { adet: number; tutar: number }>;
     for (const { id } of SEKMELER) {
       const list = taban.filter((k) => sekmedeMi(id, k, firmaMap));
-      m[id] = { adet: list.length, tutar: list.reduce((t, k) => t + k.toplamTutar, 0) };
+      m[id] = {
+        adet: list.length,
+        tutar: list.reduce((t, k) => {
+          const firma = k.firmaId ? firmaMap.get(k.firmaId) : undefined;
+          return t + sekmeTutari(id, k, !!firma && firmaTuru(firma) === "gider");
+        }, 0),
+      };
     }
     return m;
   }, [taban, firmaMap]);
@@ -137,7 +161,13 @@ export default function ArsivPage() {
   const kalemler = useMemo(() => {
     if (sekme !== "harcama") return [];
     const m = new Map<string, number>();
-    for (const k of sekmedekiler) m.set(k.firmaId!, (m.get(k.firmaId!) ?? 0) + k.toplamTutar);
+    for (const k of sekmedekiler) {
+      // Gider kalemine yapılan mahsupta kalem karşı taraftır; komisyon belgesinde firmaId'dir.
+      const id = mahsupMu(k) ? k.karsiFirmaId : k.firmaId;
+      if (!id) continue;
+      const firma = firmaMap.get(id);
+      m.set(id, (m.get(id) ?? 0) + harcamaTutari(k, !!firma && firmaTuru(firma) === "gider"));
+    }
     return [...m.entries()]
       .map(([id, tutar]) => ({ id, ad: firmaMap.get(id)?.ad ?? "—", tutar }))
       .sort((a, b) => b.tutar - a.tutar);
@@ -145,24 +175,44 @@ export default function ArsivPage() {
 
   const { sira, sirala: siraDegistir } = useSiralama("arsiv");
   const gorunen = useMemo(
-    () => sirala(kalem ? sekmedekiler.filter((k) => k.firmaId === kalem) : sekmedekiler, sira, ARSIV_SUTUNLARI),
+    () =>
+      sirala(
+        kalem ? sekmedekiler.filter((k) => (mahsupMu(k) ? k.karsiFirmaId === kalem : k.firmaId === kalem)) : sekmedekiler,
+        sira,
+        ARSIV_SUTUNLARI
+      ),
     [sekmedekiler, kalem, sira]
   );
 
-  // Summary of what is listed: Net = Gelen − Giden.
+  // Summary of what is listed: Net = Gelen − Giden. Transfer ve mahsup gelir/gider olmadığı için
+  // Gelen / Giden / Net'e girmez; kendi toplamları ayrıca yazılır.
   const ozet = useMemo(() => {
     let gelen = 0;
     let giden = 0;
     let harcama = 0;
+    let transfer = 0;
+    let mahsup = 0;
     for (const k of gorunen) {
-      if (k.yon === "gelen") gelen += k.toplamTutar;
+      const firma = k.firmaId ? firmaMap.get(k.firmaId) : undefined;
+      const giderMi = !!firma && firmaTuru(firma) === "gider";
+      if (transferMi(k)) transfer += k.toplamTutar;
+      else if (mahsupMu(k)) mahsup += sayilan(k);
+      else if (k.yon === "gelen") gelen += k.toplamTutar;
       else giden += k.toplamTutar;
-      if (sekmedeMi("harcama", k, firmaMap)) harcama += k.toplamTutar;
+      harcama += harcamaTutari(k, giderMi);
     }
-    return { gelen, giden, harcama, net: gelen - giden };
+    return { gelen, giden, harcama, transfer, mahsup, net: gelen - giden };
   }, [gorunen, firmaMap]);
 
   const detay = detayId ? kayitlar.find((k) => k.id === detayId) : undefined;
+  // Komisyon belgesine tıklanınca bağlı olduğu mahsup düzenlenir.
+  const mahsupKaydi = detay
+    ? mahsupMu(detay)
+      ? detay
+      : komisyonMu(detay)
+        ? (kayitlar.find((k) => k.id === detay.mahsupId) ?? null)
+        : null
+    : null;
   const enBuyuk = kalemler[0]?.tutar ?? 0;
 
   // What the screen is filtered by, written on the printout.
@@ -269,6 +319,22 @@ export default function ArsivPage() {
         <span>
           Net <b className={`tabular ${ozet.net < 0 ? "text-[var(--brand)]" : "text-[var(--foreground)]"}`}>{formatTL(ozet.net)}</b>
         </span>
+        {ozet.transfer > 0 && (
+          <>
+            <span className="text-[var(--border-strong)]">·</span>
+            <span title="Hesaplar arası aktarım; gelir ya da gider değildir">
+              Transfer <b className="tabular text-[var(--accent-blue)]">{formatTL(ozet.transfer)}</b>
+            </span>
+          </>
+        )}
+        {ozet.mahsup > 0 && (
+          <>
+            <span className="text-[var(--border-strong)]">·</span>
+            <span title="Aracılı ödeme; kasadan para geçmez, Gelen / Giden toplamlarına girmez">
+              Mahsup <b className="tabular text-[var(--accent-blue)]">{formatTL(ozet.mahsup)}</b>
+            </span>
+          </>
+        )}
       </div>
 
       {sekme === "harcama" && kalemler.length > 0 && (
@@ -347,13 +413,49 @@ export default function ArsivPage() {
                     <td className="tabular">{formatDate(k.tarih)}</td>
                     <td>
                       <div className="flex items-center gap-1.5">
-                        <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
+                        {transferMi(k) ? (
+                          <span className="font-medium">Transfer</span>
+                        ) : (
+                          <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
+                        )}
+                        {mahsupMu(k) && (
+                          <>
+                            <span className="text-[var(--muted-soft)]">→</span>
+                            <FirmaLink
+                              firmaId={k.karsiFirmaId}
+                              personelId={k.karsiPersonelId}
+                              ad={k.karsiFirma ?? "—"}
+                              className="font-medium"
+                            />
+                          </>
+                        )}
                         {aramaAnahtari && <span className="badge bg-[#f1f1f4] text-[var(--muted)]">{kisaAyEtiketi(k.tarih, ay)}</span>}
                       </div>
-                      <div className="text-xs text-[var(--muted)]">{k.aciklama}</div>
+                      <div className="text-xs text-[var(--muted)]">
+                        {transferMi(k)
+                          ? [
+                              `${k.bankaHesapId ? (hesaplar.find((h) => h.id === k.bankaHesapId)?.hesapSahibi ?? "Banka") : "Nakit Kasa"} → ${
+                                k.hedefBankaHesapId
+                                  ? (hesaplar.find((h) => h.id === k.hedefBankaHesapId)?.hesapSahibi ?? "Banka")
+                                  : "Nakit Kasa"
+                              }`,
+                              k.aciklama,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : k.aciklama}
+                      </div>
                     </td>
                     <td>
-                      <span className={`badge ${k.yon === "gelen" ? "badge-giris" : "badge-cikis"}`}>{k.yon === "gelen" ? "Giriş" : "Çıkış"}</span>
+                      {ozelKayitMi(k) ? (
+                        <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">
+                          {KAYIT_TURU_LABEL[k.tur!]}
+                        </span>
+                      ) : (
+                        <span className={`badge ${k.yon === "gelen" ? "badge-giris" : "badge-cikis"}`}>
+                          {k.yon === "gelen" ? "Giriş" : "Çıkış"}
+                        </span>
+                      )}
                     </td>
                     <td>
                       {ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli}
@@ -372,7 +474,18 @@ export default function ArsivPage() {
         )}
       </div>
 
-      {detay && (
+      {/* Transfer ve mahsup kendi pencerelerinde düzenlenir; komisyon belgesine tıklanınca bağlı
+          olduğu mahsup açılır. Diğer kayıtlar için normal detay penceresi. */}
+      {detay && transferMi(detay) && <TransferModal key={detay.id} kayit={detay} onClose={() => setDetayId(null)} />}
+      {detay && mahsupKaydi && (
+        <MahsupModal
+          key={mahsupKaydi.id}
+          kayit={mahsupKaydi}
+          komisyonId={kayitlar.find((k) => komisyonMu(k) && k.mahsupId === mahsupKaydi.id)?.id ?? null}
+          onClose={() => setDetayId(null)}
+        />
+      )}
+      {detay && !transferMi(detay) && !mahsupKaydi && (
         <KayitDetayModal key={detay.id} kayit={detay} hesaplar={hesaplar} kartOnerileri={kartOnerileri(kayitlar)} onClose={() => setDetayId(null)} />
       )}
     </div>
@@ -394,8 +507,10 @@ function ArsivYazdirmaListesi({ kayitlar }: { kayitlar: KasaKaydi[] }) {
   if (kayitlar.length === 0) {
     return <p className="hidden print:block text-[11px] text-[var(--muted)] mt-4">Bu filtrelere uyan kayıt yok.</p>;
   }
-  const giris = kayitlar.filter((k) => k.yon === "gelen").reduce((t, k) => t + k.toplamTutar, 0);
-  const cikis = kayitlar.filter((k) => k.yon === "giden").reduce((t, k) => t + k.toplamTutar, 0);
+  // Transfer ve mahsup gelir/gider olmadığı için Giriş / Çıkış sütunlarına ve toplamına girmez;
+  // satırda tür işaretiyle ve kendi tutarıyla görünürler.
+  const giris = kayitlar.filter((k) => !ozelKayitMi(k) && k.yon === "gelen").reduce((t, k) => t + k.toplamTutar, 0);
+  const cikis = kayitlar.filter((k) => !ozelKayitMi(k) && k.yon === "giden").reduce((t, k) => t + k.toplamTutar, 0);
   return (
     <table className="yazdir-tablo hidden print:table mt-2">
       <thead>
@@ -413,12 +528,14 @@ function ArsivYazdirmaListesi({ kayitlar }: { kayitlar: KasaKaydi[] }) {
             <td className="tabular">{formatDate(k.tarih)}</td>
             <td>
               <b className="font-semibold">{k.firma}</b>
+              {mahsupMu(k) ? ` → ${k.karsiFirma ?? "—"}` : ""}
               {k.aciklama ? ` · ${k.aciklama}` : ""}
+              {ozelKayitMi(k) && <span className="yazdir-isaret">{KAYIT_TURU_LABEL[k.tur!]}</span>}
               {k.durum === "aktif" && <span className="yazdir-isaret">Açık</span>}
             </td>
             <td>{[ODEME_SEKLI_LABEL[k.odemeSekli], k.kartAciklama].filter(Boolean).join(" · ")}</td>
-            <td className="sag">{k.yon === "gelen" ? formatTL(k.toplamTutar) : ""}</td>
-            <td className="sag">{k.yon === "giden" ? formatTL(k.toplamTutar) : ""}</td>
+            <td className="sag">{ozelKayitMi(k) ? "" : k.yon === "gelen" ? formatTL(k.toplamTutar) : ""}</td>
+            <td className="sag">{ozelKayitMi(k) ? "" : k.yon === "giden" ? formatTL(k.toplamTutar) : ""}</td>
           </tr>
         ))}
         <tr className="genel-toplam">

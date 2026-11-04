@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft, FileText, Handshake } from "lucide-react";
 import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 import FirmaIslemMenu from "@/components/FirmaIslemMenu";
 import FirmaFormModal from "@/components/FirmaFormModal";
@@ -11,6 +11,8 @@ import { useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler, kartOn
 import { siparisOdemeleri } from "@/lib/siparis";
 import SiparisDetayModal from "@/components/SiparisDetayModal";
 import { ekstreOlustur, FIRMA_TURU_LABEL, firmaTuru, type EkstreSatiri } from "@/lib/firma";
+import { kayitFirmayaAitMi } from "@/lib/kayit";
+import MahsupModal from "@/components/MahsupModal";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 import { SiraTh } from "@/components/SiraBasligi";
 import type { KasaKaydi } from "@/lib/types";
@@ -85,18 +87,20 @@ export default function CariEkstrePage() {
   const [detayId, setDetayId] = useState<string | null>(null);
   const [siparisDetayId, setSiparisDetayId] = useState<string | null>(null);
   const [duzenle, setDuzenle] = useState(false);
+  const [mahsupAcik, setMahsupAcik] = useState(false);
   const [aralik, setAralik] = useState<{ tur: AralikTuru; bas: string; bit: string }>({ tur: "tumu", bas: "", bit: "" });
   const aralikta = (tarih: string) => (!aralik.bas || tarih >= aralik.bas) && (!aralik.bit || tarih <= aralik.bit);
   const { sira, sirala: siraDegistir } = useSiralama("ekstre");
   const { sira: harcamaSira, sirala: harcamaSiraDegistir } = useSiralama("harcama-dokumu");
 
   const firma = firmalar.find((f) => f.id === id);
-  const firmaKayitlari = useMemo(() => kayitlar.filter((k) => k.firmaId === id), [kayitlar, id]);
+  // Mahsup iki firmanın ekstresinde de görünür: karşı taraf olarak bağlı kayıtlar da bu listeye girer.
+  const firmaKayitlari = useMemo(() => kayitlar.filter((k) => kayitFirmayaAitMi(k, id)), [kayitlar, id]);
   const firmaSiparisleri = useMemo(() => siparisler.filter((s) => s.firmaId === id), [siparisler, id]);
   const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
   const satirlar = useMemo(
-    () => ekstreOlustur(firmaKayitlari, firmaSiparisleri, odemeler),
-    [firmaKayitlari, firmaSiparisleri, odemeler]
+    () => ekstreOlustur(firmaKayitlari, firmaSiparisleri, odemeler, id),
+    [firmaKayitlari, firmaSiparisleri, odemeler, id]
   );
 
   // The running balance is computed over all history; a range shows its slice, opening with the
@@ -184,6 +188,14 @@ export default function CariEkstrePage() {
           </p>
         </div>
         <div className="flex items-center gap-1.5 print:hidden">
+          {/* Mahsup: bu firma müşteriyse ödeyen, tedarikçi / gider kalemiyse alan taraf olarak gelir. */}
+          <button
+            className="btn-secondary inline-flex items-center gap-1.5"
+            onClick={() => setMahsupAcik(true)}
+            title="Aracılı ödeme: müşteri parayı doğrudan tedarikçiye ödedi"
+          >
+            <Handshake className="w-4 h-4" /> Mahsup
+          </button>
           <YazdirButonu dosyaAdi={`${gider ? "Harcama Dökümü" : "Cari Ekstre"} - ${firma.ad}`} />
           <FirmaIslemMenu
             firma={firma}
@@ -195,6 +207,17 @@ export default function CariEkstrePage() {
           />
         </div>
       </div>
+
+      {mahsupAcik && firma && (
+        <MahsupModal
+          baslangic={
+            firmaTuru(firma) === "musteri"
+              ? { odeyen: { firmaId: firma.id, firma: firma.ad } }
+              : { alan: { firmaId: firma.id, firma: firma.ad } }
+          }
+          onClose={() => setMahsupAcik(false)}
+        />
+      )}
 
       {duzenle && (
         <FirmaFormModal

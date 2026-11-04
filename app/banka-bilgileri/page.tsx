@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Landmark, Copy, Check, Pencil, Trash2, Plus, ChevronDown, EyeOff, RotateCcw, CreditCard, CircleHelp } from "lucide-react";
+import { Landmark, Copy, Check, Pencil, Trash2, Plus, ChevronDown, EyeOff, RotateCcw, CreditCard, CircleHelp, ArrowLeftRight } from "lucide-react";
 import { useBankaHesaplari, useKasaKayitlari } from "@/lib/hooks";
 import { addBankaHesabi, deleteBankaHesabi, hesapAta, updateBankaHesabi } from "@/lib/db";
 import { tumHareketler, signed, type Hareket } from "@/lib/hareketler";
@@ -13,6 +13,7 @@ import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
 import { SiraCubugu } from "@/components/SiraBasligi";
+import TransferModal from "@/components/TransferModal";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 
 const empty = { banka: "", hesapSahibi: "", iban: "", aciklama: "" };
@@ -34,6 +35,7 @@ export default function BankaBilgileriPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState(empty);
   const [adding, setAdding] = useState(false);
+  const [transferAcik, setTransferAcik] = useState(false);
   const { sira, sirala: siraDegistir } = useSiralama("banka.hareketler");
 
   // Havale movements grouped by account, newest first. Those with no (or an unknown) account
@@ -98,11 +100,16 @@ export default function BankaBilgileriPage() {
           title="Banka Hesapları"
           description="Hesap bilgileri, her hesaba yapılan havalelerin bakiyesi ve kart / POS tahsilatları."
         />
-        {!adding && (
-          <button className="btn-primary inline-flex items-center gap-2" onClick={() => { setAdding(true); setForm(empty); }}>
-            <Plus className="w-4 h-4" /> Yeni Hesap
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn-secondary inline-flex items-center gap-1.5" onClick={() => setTransferAcik(true)}>
+            <ArrowLeftRight className="w-4 h-4" /> Transfer
           </button>
-        )}
+          {!adding && (
+            <button className="btn-primary inline-flex items-center gap-2" onClick={() => { setAdding(true); setForm(empty); }}>
+              <Plus className="w-4 h-4" /> Yeni Hesap
+            </button>
+          )}
+        </div>
       </div>
 
       <KartPosOzeti gruplar={kartGruplari} />
@@ -157,6 +164,7 @@ export default function BankaBilgileriPage() {
             />
           )
         )}
+      {transferAcik && <TransferModal onClose={() => setTransferAcik(false)} />}
       </div>
     </div>
   );
@@ -383,7 +391,14 @@ function HesapKarti({
             {gorunen.map((h, i) => (
               <li key={`${h.kayitId}-${i}`} className="px-5 py-2.5 flex items-center justify-between gap-4 text-sm">
                 <div className="min-w-0">
-                  <div className="truncate"><FirmaLink firmaId={h.firmaId} personelId={h.personelId} ad={h.firma} /></div>
+                  <div className="truncate flex items-center gap-1.5">
+                    <FirmaLink firmaId={h.firmaId} personelId={h.personelId} ad={h.firma} />
+                    {h.bacak && (
+                      <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)] shrink-0">
+                        {h.bacak === "kaynak" ? "Transfer · gönderilen" : "Transfer · gelen"}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-[var(--muted)] tabular">
                     {formatDate(h.tarih)}
                     {h.aciklama ? ` · ${h.aciklama}` : ""}
