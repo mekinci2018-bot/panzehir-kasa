@@ -64,7 +64,9 @@ Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce
 
 ### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup
 
-> **Durum (04.11.2026):** Transfer beklemede, Mahsup Aşama 3'e taşındı. Aşağıdaki kurgu kararları aynen geçerli.
+> **Durum (04.11.2026):** Bu aşamada **hiç kod yazılmadı** — yalnızca aşağıdaki kurgu kararları alındı (03.11). Transfer beklemede, Mahsup Aşama 3'e taşındı. Kararlar aynen geçerli.
+>
+> Doğrulama (04.11.2026): `git log --all -S"mahsup"` / `-S"hedefOdemeSekli"` / `-S'tur: "transfer"'` ile tüm dallarda arandı — bu kelimeler **yalnızca bu not dosyasında** geçiyor, hiçbir commit'te kod olarak eklenmemiş. `lib/types.ts` → `Yon = "gelen" | "giden"` (ayrı bir `tur` alanı yok), `app/kasa/KayitRow.tsx`'teki İşlem listesi hâlâ sadece **Giriş / Çıkış**. Yani canlıda (Vercel) da Transfer / Mahsup seçeneği yok. Kurgu tartışması yapıldığı için "yapıldı" izlenimi oluşabiliyor; bu satır onun için duruyor.
 
 **Transfer**
 
@@ -184,8 +186,6 @@ Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca 
 
 ## Bekleyen küçük işler
 
-- **Google Drive client secret'ı yenileme:** Otomatik yedek **çalışıyor** (son otomatik yedek 02.11.2026 03:06), Drive kurulumu bitti. Geriye tek iş kaldı: client secret ekran görüntüsüyle sohbete düştüğü için yenilenmeli. Yollar: Google Cloud → Clients → Panzehir Yedek → Add secret → eskisini Disable ve Delete. Sonra Vercel'de `GOOGLE_CLIENT_SECRET` değerini güncelleyip yeniden dağıtın, ertesi gün gece yedeğinin geldiğini doğrulayın.
-- **PIN değiştirme:** Ortak kasa hesabının 6 haneli PIN'i değiştirilecek.
 - **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
 - **Excel (.xlsx) yedeği:** gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenecek (`exceljs` zaten kurulu).
 
