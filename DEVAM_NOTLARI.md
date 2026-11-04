@@ -1,6 +1,6 @@
 # Devam notları
 
-Son güncelleme: 04.11.2026 (Aşama 2B bitti ve commit edildi; çek / senet girişi bekliyor)
+Son güncelleme: 04.11.2026 (Aşama 2B bitti, çek / senetler canlı veriye girildi; sırada Aşama 3)
 
 ## 04.11.2026'da yapılanlar
 
@@ -22,12 +22,16 @@ Son güncelleme: 04.11.2026 (Aşama 2B bitti ve commit edildi; çek / senet giri
 - Vade tarihli kalemlerde (çek / senet) **"Ödendi olarak işaretle"**: kalan tutarın tamamı hazır gelir, ödeme şekli ve tarihi sorulur, mevcut `tahsilEt` yolundan Kasa'ya Çıkış olarak yazılır. Vadesi olmayan kalemlerde buton eskisi gibi "Ödeme Yap"; "Arşive Gönder" her kalemde duruyor.
 - Yeni `lib/belge.ts`: açıklamadan "çek" / "senet" okur (kelime sınırına bakar, "çekildi" gibi sözcüklere takılmaz). **Ayrı alan açılmadı**, çünkü belge no ve banka da aynı açıklama metninde duracak.
 
-### Sırada bekleyen: çek / senet kayıtlarının girilmesi
+### Çek / senet kayıtları girildi (canlı veride, kontrol edildi, onaylandı)
 
-- **Önce kontrol (yazmadan):** `scripts/cek-senet-rapor.mjs` hazır — salt okuma; JOKERLED, ERHAN ŞENTÜRK ve notunda çek/senet geçen firmaların açık borç kalemlerini (devir bakiyesi dahil) ve firma notunu yan yana döküyor. Kullanıcı kendi terminalinde `node scripts/cek-senet-rapor.mjs` ile çalıştırıp çıktıyı paylaşacak (PIN sohbete yazılmıyor).
-- **Karar:** devir bakiyesi varsa, senetler o bakiyenin ödemesi olabilir; **iki kez sayılmaması için** bakiye ile ödenmemiş çek/senet toplamı yan yana konup kullanıcıya sorulacak.
-- **Sonra:** yedek al (`scripts/yedek-al.mjs`), ödenmemiş çek/senetleri Borçlar'a vade tarihli borç kaydı olarak gir (firma, vade tarihi, tutar, tür + belge no + banka açıklamada), ödenmiş olanları girme. Kuru çalıştırma varsayılan, `--yaz` ile uygula.
-- Kayıtlar girilince Genel Durum'daki "Vadesi Yaklaşan Ödemeler" kendiliğinden dolacak; Ticari Borçlar toplamı bunları **bir kez** sayıyor (tedarikçi bakiyesinin içinde), alt tablo yalnızca döküm.
+- **Önce salt okuma kontrolü:** `scripts/cek-senet-rapor.mjs` (hiçbir şey yazmaz) ile ERHAN ŞENTÜRK ve MC LED (JOKER LED) bakiyeleri ile firma notları yan yana okundu. **Sonuç: iki firmanın da tedarikçi devir bakiyesi yok**, yani senetler bir devir bakiyesinin ödemesi değil — çift sayma riski yok, kayıtlar doğrudan girildi.
+- **Girilen 9 vade tarihli borç kaydı, toplam 644.500 TL:**
+  - ERHAN ŞENTÜRK, 2 çek: `Çek · No 6001176 · İŞ BANKASI` 75.000 (vade 06.11.2026), `Çek · No 6001177 · İŞ BANKASI` 90.000 (vade 20.11.2026) = 165.000 TL. Notlardaki **ödenmiş 2 çek bilerek girilmedi.**
+  - MC LED (JOKER LED), 7 senet × 68.500 = 479.500 TL; vadeler 30.10.2026, 13.11.2026, 27.11.2026, 11.12.2026, 25.12.2026, 15.01.2027, 29.01.2027. Numara ve banka bilgisi olmadığı için açıklama düz `Senet`. **30.10.2026 vadeli senet ödenmemiş olarak girildi** (kullanıcı kararı), vadesi geçmiş görünüyor.
+- Kayıt biçimi: `yon: "giden"`, `durum: "aktif"`, `alinanTutar: 0`, `kaynak: "veresiye"` (uygulamadaki "Yeni Borç" ile aynı), `vadeTarihi` ayrı alanda. **`tarih` = girildiği gün (04.11.2026)**, vade değil — çünkü Borçlar listesi `tarih`e göre ay süzüyor; vade tarihi konsa 2027 vadeli senetler bu ay hiç görünmezdi.
+- `scripts/cek-senet-gir.mjs`: kuru çalıştırma varsayılan, `--yaz` ile uygular. Her çalıştırmada (kuru dahil) `kasaKayitlari` + `firmalar` yedeğini `import/` klasörüne alır (`yedek-CEK-SENET-ONCESI-…`). Belge kimlikleri vade + belge no'dan türetilir (`vadeli-<firma>-<vade>-<no>`) ve aynı firma/vade/tutar üçlüsü varsa atlanır — betik ikinci kez çalışsa da çift kayıt olmaz. Firma eşleştirmesi tek sonuca düşmezse hiçbir şey yazmadan durur. Yazmadan sonra Firestore'dan yeniden okuyup firma bazında açık kalem sayısı ve toplamları doğrular.
+- Genel Durum'daki "Vadesi Yaklaşan Ödemeler" tablosu bu kayıtlarla doldu; Ticari Borçlar toplamı bunları **bir kez** sayıyor (tedarikçi bakiyesinin içinde), alt tablo yalnızca döküm.
+- Not: `scripts/yedek-al.mjs` servis hesabı anahtarı istiyor, o dosya bu bilgisayarda yok; görseller dahil tam yedek için Ayarlar → "Şimdi yedek al" (Drive) kullanılmalı.
 
 ## 03.11.2026'da yapılanlar
 
@@ -56,7 +60,11 @@ Son güncelleme: 04.11.2026 (Aşama 2B bitti ve commit edildi; çek / senet giri
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
+**Sıra (04.11.2026 kararı):** önce **Aşama 3** — tahsilatların siparişlere dağıtılması, **Mahsup dahil** (aşağıdaki Aşama 2'nin Mahsup bölümü Aşama 3'ün içinde yapılacak) ve **Alacaklar'ın firma bazında gruplanması** (Borçlar'da çalışan `gruplu` yapısı Alacaklar'a da açılacak). Ardından **Aşama 4** — personel maaş carisi. **Transfer (virman)** beklemede: Aşama 2'nin yalnızca Transfer bölümü yapılmadı, Aşama 3 ve 4'ten sonra ele alınacak.
+
 ### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup
+
+> **Durum (04.11.2026):** Transfer beklemede, Mahsup Aşama 3'e taşındı. Aşağıdaki kurgu kararları aynen geçerli.
 
 **Transfer**
 
@@ -82,7 +90,7 @@ Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce
 
 Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca çek / senet kayıtlarının girilmesi kaldı (aynı bölümün sonundaki adımlar).
 
-### Aşama 3 — Tahsilatların siparişlere dağıtılması
+### Aşama 3 — Tahsilatların siparişlere dağıtılması (**SIRADAKİ İŞ**; Mahsup ve Alacaklar gruplaması dahil)
 
 - **Önce, hiçbir şey değiştirmeden tutarsızlık raporu:** her firma için (cari bakiye) ile (siparişlerin kalan toplamı + diğer alacaklar) karşılaştırılacak; farkı olan firmalar ve farkın nedeni (hangi tahsilat siparişlere dağıtılmamış) listelenecek. Onaydan sonra, yedek alarak, dağıtılmamış tahsilatlar aynı kuralla (eskiden yeniye) dağıtılacak ve sonuç raporlanacak.
 - **Önemli bulgu (03.11.2026):** sorun yalnızca "dağıtım yok" değil. Firmadan alınan düz bir Kasa Girişi şu anda cariye **hiç** yansımıyor — `toplamTutar = alinanTutar` olduğu için "peşin satış" gibi modelleniyor ve ekstrede borç + alacak satırı birbirini sıfırlıyor. Bu yüzden `tur: "tahsilat"` diye ayrı bir kayıt türü gerekiyor: ekstrede yalnızca alacak satırı üretir, bakiyeye dağıtılmamış kısmı kadar etki eder.
@@ -92,7 +100,8 @@ Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca 
 - Fazla ödeme firmanın **avans / alacak bakiyesi** olarak kalır, ekstrede görünür ve o firmanın sonraki siparişine otomatik (onaylı) düşer.
 - Tahsilat silinir / çöpe giderse dağıtımı geri alınır; çöpten dönünce tekrar uygulanır.
 - Sipariş detayına "Bu siparişe yapılan ödemeler" listesi: tarih, tutar, ödeme şekli, hangi tahsilattan geldiği.
-- **Alacaklar / Borçlar firma bazında gruplanacak:** aynı firmanın siparişleri (örn. EGESER REKLAM) tek satırda toplanacak, satıra tıklayınca açılacak; firma satırında **Tahsilat Al / Ödeme Yap** butonu olacak.
+- **Alacaklar firma bazında gruplanacak:** Borçlar'da 04.11'de çalışmaya başlayan yapı (`components/OutstandingList.tsx` → `gruplu` bayrağı) Alacaklar'a da açılacak; aynı firmanın siparişleri (örn. EGESER REKLAM) tek satırda toplanacak, satıra tıklayınca açılacak. Eksik kalan tek parça: **firma satırındaki Tahsilat Al / Ödeme Yap butonu** — firma bazında tahsilat, dağıtım kuralı (eskiden yeniye) bu aşamada yazılınca eklenecek.
+- **Mahsup (aracılı ödeme) bu aşamada yapılacak:** kurgusu yukarıdaki Aşama 2 bölümünde duruyor (para hareketi üretmez, iki carinin bakiyesini düşürür, komisyon farkı `mahsupId` ile bağlı ikinci belge olarak yazılır). Ödeyenin alacağının düşürülmesi Aşama 3'ün dağıtım kuralını kullandığı için ikisi birlikte yapılıyor.
 
 ### Aşama 4 — Personel maaş carisi
 
