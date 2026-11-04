@@ -1,6 +1,33 @@
 # Devam notları
 
-Son güncelleme: 03.11.2026 (Aşama 1 ve eki bitti, commit edildi)
+Son güncelleme: 04.11.2026 (Aşama 2B bitti ve commit edildi; çek / senet girişi bekliyor)
+
+## 04.11.2026'da yapılanlar
+
+### Aşama 2B: Genel Durum — "Finansal Durum Raporu" (localhost'ta test edildi, onaylandı, commit edildi)
+
+- Yeni `app/genel-durum/page.tsx`. Dil ve düzen bilinçli olarak **şirket raporu** gibi: "Param nerede / Kimden alacağım / Kime borçluyum" gibi günlük ifadeler kullanılmıyor.
+- Üstte dört kutu: Hazır Değerler, Ticari Alacaklar, Ticari Borçlar ve vurgulu **Net Finansal Durum** (pozitifse yeşil, negatifse kırmızı zemin).
+- **Hazır Değerler — Kasa ve Bankalar:** Hesap (hesap sahibi · banka) / Tür (Nakit · Banka · POS) / Son hareket / Bakiye + Toplam satırı. Satıra tıklayınca son 8 hareket açılıyor. "Hesap seçilmemiş havaleler" ayrı satır — bu yüzden toplam, Kasa'daki Toplam Kasa ile birebir tutuyor.
+- **Ticari Alacaklar — Müşteriler:** 0–30 / 31–60 / 61–90 / 90+ gün yaşlandırma çubuğu (tutar + yüzde; gecikme en eski açık kalemin tarihinden). Tablo: Müşteri / Açık sipariş / En eski tarih / Gecikme / Bakiye, ilk 10 cari + "Diğer N müşteri" özeti + toplam; başlıkta "Tümünü gör" → Alacaklar. Satır sonunda iki küçük ikon: WhatsApp ve Tahsilat Al (firmanın **en eski** açık kalemini açar; sipariş ise Ödeme Al, düz kasa kaydı ise Tahsilat penceresi).
+- **Ticari Borçlar — Tedarikçiler:** Tedarikçi / Açık kalem / En eski tarih / Bakiye, aynı ilk-10 + toplam yapısı; altında **Vadesi Yaklaşan Ödemeler** alt tablosu (vade / firma / açıklama / tutar; geçmiş kırmızı, 7 gün içi turuncu). Aşama 4'ten sonra buraya personel satırı eklenecek.
+- **Önemli:** bakiyeler **cari bazında netleniyor** (aynı firmanın sipariş kalanları + kasa kayıtları birlikte). Bu yüzden buradaki Ticari Alacaklar, Kasa'daki kayıt bazlı "Tahsil Edilecek"ten farklı çıkabilir. Personelli ve firması bağlanmamış eski kayıtlar da listeye giriyor, yoksa net durum eksik kalırdı.
+- Yazdır / PDF başlığı "Finansal Durum Raporu" + tarih; butonlar, açılır hareketler ve "Tümünü gör" bağlantıları baskıda gizli. Rapor tabloları için `globals.css` → `.rapor-tablo`, `.rapor-bolum-baslik`.
+- Menüde "Genel Durum" **Banka Hesapları'nın altında**; açılış sayfası ve logo Kasa'da kaldı (önce en üste alınıp açılış yapılmıştı, 04.11'de geri alındı).
+- Aşama 3'teki bulgu burada da geçerli: firmadan alınan düz Kasa Girişi cariye yansımadığı için bazı müşterilerin alacağı olduğundan büyük görünebilir.
+
+### Borçlar: firma bazında gruplama + "Ödendi olarak işaretle" (localhost'ta test edildi, onaylandı, commit edildi)
+
+- `components/OutstandingList.tsx` içinde `gruplu` bayrağı (şimdilik yalnızca Borçlar'da açık). Aynı tedarikçinin bütün açık kalemleri tek ana satırda: firma, "N kalem" rozeti, tür dökümü ("7 senet · 2 çek"), en yakın vade, toplam. Tıklayınca kalemler girintili alt satır olarak açılıyor; tek kalemi olan firma katlanmıyor. Grup sırası, seçili sütun sıralamasını koruyor. Mobil kartlar da aynı düzende. **Aşama 3'te Alacaklar aynı yapıdan açılacak.**
+- Vade tarihli kalemlerde (çek / senet) **"Ödendi olarak işaretle"**: kalan tutarın tamamı hazır gelir, ödeme şekli ve tarihi sorulur, mevcut `tahsilEt` yolundan Kasa'ya Çıkış olarak yazılır. Vadesi olmayan kalemlerde buton eskisi gibi "Ödeme Yap"; "Arşive Gönder" her kalemde duruyor.
+- Yeni `lib/belge.ts`: açıklamadan "çek" / "senet" okur (kelime sınırına bakar, "çekildi" gibi sözcüklere takılmaz). **Ayrı alan açılmadı**, çünkü belge no ve banka da aynı açıklama metninde duracak.
+
+### Sırada bekleyen: çek / senet kayıtlarının girilmesi
+
+- **Önce kontrol (yazmadan):** `scripts/cek-senet-rapor.mjs` hazır — salt okuma; JOKERLED, ERHAN ŞENTÜRK ve notunda çek/senet geçen firmaların açık borç kalemlerini (devir bakiyesi dahil) ve firma notunu yan yana döküyor. Kullanıcı kendi terminalinde `node scripts/cek-senet-rapor.mjs` ile çalıştırıp çıktıyı paylaşacak (PIN sohbete yazılmıyor).
+- **Karar:** devir bakiyesi varsa, senetler o bakiyenin ödemesi olabilir; **iki kez sayılmaması için** bakiye ile ödenmemiş çek/senet toplamı yan yana konup kullanıcıya sorulacak.
+- **Sonra:** yedek al (`scripts/yedek-al.mjs`), ödenmemiş çek/senetleri Borçlar'a vade tarihli borç kaydı olarak gir (firma, vade tarihi, tutar, tür + belge no + banka açıklamada), ödenmiş olanları girme. Kuru çalıştırma varsayılan, `--yaz` ile uygula.
+- Kayıtlar girilince Genel Durum'daki "Vadesi Yaklaşan Ödemeler" kendiliğinden dolacak; Ticari Borçlar toplamı bunları **bir kez** sayıyor (tedarikçi bakiyesinin içinde), alt tablo yalnızca döküm.
 
 ## 03.11.2026'da yapılanlar
 
@@ -51,14 +78,9 @@ Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce
 - Her iki firmanın ekstresinde "Mahsup · A → C" olarak görünecek. Arşiv'de Mahsup sekmesi; Gelen / Giden / Harcama toplamlarına dahil edilmez (komisyon hariç — o Harcama'ya girer).
 - Firma ekstresinden, Alacaklar'dan ve Borçlar'dan da Mahsup butonuyla başlatılabilir; ilgili taraf önceden seçili gelir.
 
-### Aşama 2B — Genel Durum sayfası
+### Aşama 2B — Genel Durum sayfası · **BİTTİ** (04.11.2026)
 
-- Menünün **en üstüne** "Genel Durum". Uygulama açılınca bu sayfa gelecek, logo da buraya gidecek. Yazdır / PDF olacak.
-- **Param nerede:** Nakit Kasa, her banka hesabı ayrı satır (hesap sahibi adıyla), Kart / POS, Toplam. Satıra tıklayınca o hesabın hareketleri açılır.
-- **Kimden alacağım:** müşteri bazında kalan alacak, büyükten küçüğe; yanında açık sipariş sayısı ve en eski açık siparişin tarihi; WhatsApp ve "Tahsilat Al" kısayolu. Üstte toplam.
-- **Kime borçluyum:** tedarikçiler (devir bakiyesi dahil), vadesi yaklaşan çek / senet borçları (vade tarihiyle), personel (Aşama 4'ten sonra). Üstte toplam.
-- **Net durum:** Param + Alacaklarım − Borçlarım; tek büyük rakam.
-- **Bu aşamada sorulacak karar:** çek ve senetler şu anda sistemde borç olarak **yok** (31.10'da girilmedi; liste JOKERLED ve ERHAN ŞENTÜRK firmalarının notunda duruyor). "Vadesi yaklaşan çek / senet" bölümü ancak bunlar vade tarihli borç kaydı olarak girilince dolar.
+Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca çek / senet kayıtlarının girilmesi kaldı (aynı bölümün sonundaki adımlar).
 
 ### Aşama 3 — Tahsilatların siparişlere dağıtılması
 
