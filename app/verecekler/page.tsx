@@ -13,6 +13,7 @@ export default function VereceklerPage() {
       actionLabel="Ödeme Yap"
       newLabel="Yeni Borç"
       icon={ArrowUpFromLine}
+      gruplu
       emptyTitle="Henüz borç yok"
       emptyDescription="'Yeni Borç' ile ekleyebilir ya da Kasa'da peşin ödenmeyen bir 'Çıkış' girebilirsin."
     />

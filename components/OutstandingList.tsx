@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlertTriangle, Plus } from "lucide-react";
+import { AlertTriangle, ChevronRight, Plus } from "lucide-react";
 import { kartOnerileri, useBankaHesaplari, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { addKasaKaydi, arsiveGonder, siparisKapat, tahsilEt } from "@/lib/db";
 import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
+import { belgeOzeti } from "@/lib/belge";
 import { currentMonthKey, daysSince, formatDate, formatTL, monthLabel, vadeDurumu, type VadeDurumu } from "@/lib/format";
 import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
 import MonthNav from "./MonthNav";
@@ -33,6 +34,19 @@ interface AcikKalem {
   kalan: number;
   kayit?: KasaKaydi;
   siparis?: Siparis;
+}
+
+// Firma (ya da personel / serbest metin) bazında grup: Borçlar'da aynı tedarikçinin bütün açık
+// kalemleri tek satırda toplanır, satıra tıklayınca kalemler açılır.
+interface Grup {
+  key: string;
+  ad: string;
+  firmaId?: string;
+  personelId?: string;
+  kalemler: AcikKalem[];
+  toplam: number;
+  ilkTarih: string;
+  enYakinVade?: string;
 }
 
 const OVERDUE_DAYS = 30;
@@ -68,6 +82,7 @@ export default function OutstandingList({
   icon,
   emptyTitle,
   emptyDescription,
+  gruplu = false,
 }: {
   yon: Yon;
   title: string;
@@ -78,14 +93,17 @@ export default function OutstandingList({
   icon: LucideIcon;
   emptyTitle: string;
   emptyDescription: string;
+  gruplu?: boolean; // firma bazında gruplama (Borçlar)
 }) {
   const { kayitlar, loading } = useKasaKayitlari();
   const { siparisler } = useSiparisler();
   const { hesaplar } = useBankaHesaplari();
   const [modalFor, setModalFor] = useState<KasaKaydi | null>(null);
+  const [odendiFor, setOdendiFor] = useState<KasaKaydi | null>(null);
   const [siparisFor, setSiparisFor] = useState<AcikKalem | null>(null);
   const [adding, setAdding] = useState(false);
   const [ay, setAy] = useState(currentMonthKey);
+  const [acikGruplar, setAcikGruplar] = useState<string[]>([]);
 
   // Earliest due first; records without a due date fall back to their entry date.
   const items = useMemo(() => {
@@ -139,10 +157,102 @@ export default function OutstandingList({
     return { buAy, devreden };
   }, [gorunen, ay]);
 
+  // Gruplar, kalemlerin ekrandaki sırasını korur: hangi sıralama seçiliyse grup sırası da ona uyar.
+  const gruplar = useMemo(() => {
+    const map = new Map<string, Grup>();
+    for (const k of gorunen) {
+      const key = k.firmaId ?? (k.personelId ? `p-${k.personelId}` : `ad-${k.firma}`);
+      let g = map.get(key);
+      if (!g) {
+        g = { key, ad: k.firma, firmaId: k.firmaId, personelId: k.personelId, kalemler: [], toplam: 0, ilkTarih: k.tarih };
+        map.set(key, g);
+      }
+      g.kalemler.push(k);
+      g.toplam += k.kalan;
+      if (k.tarih < g.ilkTarih) g.ilkTarih = k.tarih;
+      if (k.vade && (!g.enYakinVade || k.vade < g.enYakinVade)) g.enYakinVade = k.vade;
+    }
+    return [...map.values()];
+  }, [gorunen]);
+
   // A payment shouldn't default to an account that has since been deactivated.
   function varsayilanSecim(k: KasaKaydi) {
     const hesap = hesaplar.find((h) => h.id === k.bankaHesapId && !h.pasif);
     return { odemeSekli: k.odemeSekli, bankaHesapId: hesap?.id ?? "", kartAciklama: k.kartAciklama ?? "" };
+  }
+
+  function odemeAc(k: AcikKalem) {
+    if (k.kayit) setModalFor(k.kayit);
+    else setSiparisFor(k);
+  }
+
+  function arsivle(k: AcikKalem) {
+    if (k.kayit) arsiveGonder(k.kayit.id);
+    else if (k.siparis) siparisKapat(k.siparis.id);
+  }
+
+  function grupAcKapa(key: string) {
+    setAcikGruplar((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  // Vade tarihli kalemlerde (çek / senet) tek tıkla "Ödendi olarak işaretle": kalan tutar hazır gelir,
+  // ödeme şekli ve tarihi sorulur, Kasa'ya Çıkış olarak yazılır.
+  function KalemButonlari({ k, kucuk = false }: { k: AcikKalem; kucuk?: boolean }) {
+    const boy = kucuk ? "!py-1 !px-2.5 !text-[11px]" : "!py-1.5 !px-3 !text-xs";
+    return (
+      <>
+        {k.vade && k.kayit ? (
+          <button
+            className={`btn-primary ${boy} whitespace-nowrap`}
+            title={`Ödendi olarak işaretle — ${actionLabel.toLocaleLowerCase("tr-TR")} penceresi açılır, ödeme şekli ve tarihi sorulur`}
+            onClick={() => setOdendiFor(k.kayit!)}
+          >
+            Ödendi olarak işaretle
+          </button>
+        ) : (
+          <button className={`btn-primary ${boy} whitespace-nowrap`} onClick={() => odemeAc(k)}>
+            {actionLabel}
+          </button>
+        )}
+        <button
+          className={`btn-secondary ${boy} whitespace-nowrap`}
+          title="Kalan tutar kapatılır; cari ekstrede ayrı satır olarak görünür"
+          onClick={() => arsivle(k)}
+        >
+          Arşive Gönder
+        </button>
+      </>
+    );
+  }
+
+  function KalemRozetleri({ k }: { k: AcikKalem }) {
+    const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
+    return (
+      <>
+        {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
+        {!aydaMi(k.tarih, ay) && (
+          <span className="badge bg-[#f1f1f4] text-[var(--muted)]" title="Önceki aydan kalan">
+            Devreden · {kisaAyEtiketi(k.tarih, ay)}
+          </span>
+        )}
+        {overdue && (
+          <span className="badge badge-overdue">
+            <AlertTriangle className="w-3 h-3" /> Gecikmiş
+          </span>
+        )}
+      </>
+    );
+  }
+
+  function VadeHucresi({ vade }: { vade?: string }) {
+    if (!vade) return <span className="text-[var(--muted-soft)]">—</span>;
+    const durum = vadeDurumu(vade);
+    return (
+      <div className={VADE_RENK[durum]}>
+        <div className="tabular">{formatDate(vade)}</div>
+        <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : "font-medium"}`}>{vadeEtiketi(vade)}</div>
+      </div>
+    );
   }
 
   return (
@@ -173,6 +283,14 @@ export default function OutstandingList({
           <span>
             Toplam: <b className="tabular text-[var(--foreground)]">{formatTL(toplamlar.buAy + toplamlar.devreden)}</b>
           </span>
+          {gruplu && (
+            <>
+              <span className="text-[var(--border-strong)]">·</span>
+              <span>
+                {gruplar.length} firma, {gorunen.length} kalem
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -194,55 +312,88 @@ export default function OutstandingList({
         <>
           {/* Phone: cards */}
           <div className="md:hidden flex flex-col gap-2.5 print:hidden flex-1 min-h-0 overflow-y-auto">
-            {gorunen.map((k) => {
-              const durum = k.vade ? vadeDurumu(k.vade) : "normal";
-              const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
-              return (
-                <div key={k.key} className="card p-3 flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
-                        {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
-                        {!aydaMi(k.tarih, ay) && (
-                          <span className="badge bg-[#f1f1f4] text-[var(--muted)]">Devreden · {kisaAyEtiketi(k.tarih, ay)}</span>
-                        )}
-                        {overdue && (
-                          <span className="badge badge-overdue">
-                            <AlertTriangle className="w-3 h-3" /> Gecikmiş
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[var(--muted)] truncate mt-0.5">{k.aciklama || "—"}</div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className={`tabular font-semibold text-sm ${VADE_RENK[durum]}`}>{formatTL(k.kalan)}</div>
-                      {k.vade ? (
-                        <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : `font-medium ${VADE_RENK[durum]}`}`}>
-                          {vadeEtiketi(k.vade)}
+            {gruplu
+              ? gruplar.map((g) => {
+                  const tekKalem = g.kalemler.length === 1;
+                  const acik = tekKalem || acikGruplar.includes(g.key);
+                  return (
+                    <div key={g.key} className="card p-3 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        className="flex items-start justify-between gap-3 text-left"
+                        onClick={() => !tekKalem && grupAcKapa(g.key)}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {!tekKalem && (
+                              <ChevronRight
+                                className={`w-3.5 h-3.5 text-[var(--muted-soft)] transition-transform ${acik ? "rotate-90" : ""}`}
+                              />
+                            )}
+                            <FirmaLink firmaId={g.firmaId} personelId={g.personelId} ad={g.ad} className="font-medium" />
+                          </div>
+                          <div className="text-xs text-[var(--muted)] mt-0.5">
+                            {belgeOzeti(g.kalemler.map((k) => k.aciklama))}
+                            {g.enYakinVade ? ` · en yakın vade ${formatDate(g.enYakinVade)}` : ""}
+                          </div>
                         </div>
-                      ) : (
-                        <div className="text-[11px] text-[var(--muted-soft)] tabular">{formatDate(k.tarih)}</div>
+                        <div className="tabular font-semibold text-sm shrink-0">{formatTL(g.toplam)}</div>
+                      </button>
+                      {acik && (
+                        <ul className="flex flex-col divide-y divide-[var(--border)] border-t border-[var(--border)]">
+                          {g.kalemler.map((k) => {
+                            const durum = k.vade ? vadeDurumu(k.vade) : "normal";
+                            return (
+                              <li key={k.key} className="pt-2 pb-1 flex flex-col gap-1.5">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-[13px] truncate">{k.aciklama || "—"}</div>
+                                    <div className={`text-[11px] tabular ${durum === "normal" ? "text-[var(--muted)]" : `font-medium ${VADE_RENK[durum]}`}`}>
+                                      {k.vade ? `Vade ${formatDate(k.vade)} · ${vadeEtiketi(k.vade)}` : formatDate(k.tarih)}
+                                    </div>
+                                  </div>
+                                  <div className={`tabular font-medium text-[13px] shrink-0 ${VADE_RENK[durum]}`}>{formatTL(k.kalan)}</div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <KalemButonlari k={k} kucuk />
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
                       )}
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      className="btn-primary !py-1.5 !px-3 !text-xs flex-1"
-                      onClick={() => (k.kayit ? setModalFor(k.kayit) : setSiparisFor(k))}
-                    >
-                      {actionLabel}
-                    </button>
-                    <button
-                      className="btn-secondary !py-1.5 !px-3 !text-xs flex-1"
-                      onClick={() => (k.kayit ? arsiveGonder(k.kayit.id) : k.siparis && siparisKapat(k.siparis.id))}
-                    >
-                      Arşive Gönder
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })
+              : gorunen.map((k) => {
+                  const durum = k.vade ? vadeDurumu(k.vade) : "normal";
+                  return (
+                    <div key={k.key} className="card p-3 flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
+                            <KalemRozetleri k={k} />
+                          </div>
+                          <div className="text-xs text-[var(--muted)] truncate mt-0.5">{k.aciklama || "—"}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className={`tabular font-semibold text-sm ${VADE_RENK[durum]}`}>{formatTL(k.kalan)}</div>
+                          {k.vade ? (
+                            <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : `font-medium ${VADE_RENK[durum]}`}`}>
+                              {vadeEtiketi(k.vade)}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-[var(--muted-soft)] tabular">{formatDate(k.tarih)}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <KalemButonlari k={k} />
+                      </div>
+                    </div>
+                  );
+                })}
           </div>
 
           {/* Desktop: table */}
@@ -256,67 +407,115 @@ export default function OutstandingList({
                     <SiraTh sutun="aciklama" sira={sira} onSirala={siraDegistir}>Açıklama</SiraTh>
                     <SiraTh sutun="vade" sira={sira} onSirala={siraDegistir} className="w-[150px]">Vade</SiraTh>
                     <SiraTh sutun="tutar" sira={sira} onSirala={siraDegistir} className="w-[150px] text-right">{amountLabel}</SiraTh>
-                    <th className="w-[230px]"></th>
+                    <th className="w-[300px]"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {gorunen.map((k) => {
-                    const kalan = k.kalan;
-                    const durum = k.vade ? vadeDurumu(k.vade) : "normal";
-                    const overdue = !k.vade && daysSince(k.tarih) > OVERDUE_DAYS;
-                    return (
-                      <tr key={k.key}>
-                        <td className="tabular">{formatDate(k.tarih)}</td>
-                        <td className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
-                            {k.siparis && <span className="badge bg-[var(--accent-blue-soft)] text-[var(--accent-blue)]">Sipariş</span>}
-                            {!aydaMi(k.tarih, ay) && (
-                              <span className="badge bg-[#f1f1f4] text-[var(--muted)]" title="Önceki aydan kalan">
-                                Devreden · {kisaAyEtiketi(k.tarih, ay)}
-                              </span>
-                            )}
-                            {overdue && (
-                              <span className="badge badge-overdue">
-                                <AlertTriangle className="w-3 h-3" /> Gecikmiş
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="text-[var(--muted)]">{k.aciklama || "—"}</td>
-                        <td>
-                          {k.vade ? (
-                            <div className={VADE_RENK[durum]}>
-                              <div className="tabular">{formatDate(k.vade)}</div>
-                              <div className={`text-[11px] ${durum === "normal" ? "text-[var(--muted)]" : "font-medium"}`}>
-                                {vadeEtiketi(k.vade)}
+                  {gruplu
+                    ? gruplar.flatMap((g) => {
+                        const tekKalem = g.kalemler.length === 1;
+                        if (tekKalem) {
+                          const k = g.kalemler[0];
+                          return [
+                            <tr key={k.key}>
+                              <td className="tabular">{formatDate(k.tarih)}</td>
+                              <td className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
+                                  <KalemRozetleri k={k} />
+                                </div>
+                              </td>
+                              <td className="text-[var(--muted)]">{k.aciklama || "—"}</td>
+                              <td>
+                                <VadeHucresi vade={k.vade} />
+                              </td>
+                              <td className={`num font-medium ${k.vade ? VADE_RENK[vadeDurumu(k.vade)] : ""}`}>{formatTL(k.kalan)}</td>
+                              <td>
+                                <div className="flex gap-2 justify-end">
+                                  <KalemButonlari k={k} />
+                                </div>
+                              </td>
+                            </tr>,
+                          ];
+                        }
+                        const acik = acikGruplar.includes(g.key);
+                        const satirlar = [
+                          <tr
+                            key={g.key}
+                            className="bg-[var(--surface-hover)] cursor-pointer"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => grupAcKapa(g.key)}
+                            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), grupAcKapa(g.key))}
+                            title={acik ? "Kalemleri kapat" : "Kalemleri aç"}
+                          >
+                            <td className="tabular text-[var(--muted)]">{formatDate(g.ilkTarih)}</td>
+                            <td className="font-medium">
+                              <div className="flex items-center gap-2">
+                                <ChevronRight
+                                  className={`w-4 h-4 text-[var(--muted-soft)] shrink-0 transition-transform ${acik ? "rotate-90" : ""}`}
+                                />
+                                <FirmaLink firmaId={g.firmaId} personelId={g.personelId} ad={g.ad} />
+                                <span className="badge bg-[#f1f1f4] text-[var(--muted)]">{g.kalemler.length} kalem</span>
                               </div>
+                            </td>
+                            <td className="text-[var(--muted)]">{belgeOzeti(g.kalemler.map((k) => k.aciklama))}</td>
+                            <td>
+                              <VadeHucresi vade={g.enYakinVade} />
+                            </td>
+                            <td className="num font-semibold">{formatTL(g.toplam)}</td>
+                            <td />
+                          </tr>,
+                        ];
+                        if (acik) {
+                          satirlar.push(
+                            ...g.kalemler.map((k) => (
+                              <tr key={k.key}>
+                                <td className="tabular pl-10">{formatDate(k.tarih)}</td>
+                                <td className="text-[var(--muted-soft)]">
+                                  <div className="flex items-center gap-2">
+                                    <KalemRozetleri k={k} />
+                                  </div>
+                                </td>
+                                <td>{k.aciklama || "—"}</td>
+                                <td>
+                                  <VadeHucresi vade={k.vade} />
+                                </td>
+                                <td className={`num font-medium ${k.vade ? VADE_RENK[vadeDurumu(k.vade)] : ""}`}>
+                                  {formatTL(k.kalan)}
+                                </td>
+                                <td>
+                                  <div className="flex gap-2 justify-end">
+                                    <KalemButonlari k={k} />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          );
+                        }
+                        return satirlar;
+                      })
+                    : gorunen.map((k) => (
+                        <tr key={k.key}>
+                          <td className="tabular">{formatDate(k.tarih)}</td>
+                          <td className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} />
+                              <KalemRozetleri k={k} />
                             </div>
-                          ) : (
-                            <span className="text-[var(--muted-soft)]">—</span>
-                          )}
-                        </td>
-                        <td className={`num font-medium ${VADE_RENK[durum]}`}>{formatTL(kalan)}</td>
-                        <td>
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              className="btn-primary !py-1.5 !px-3 !text-xs"
-                              onClick={() => (k.kayit ? setModalFor(k.kayit) : setSiparisFor(k))}
-                            >
-                              {actionLabel}
-                            </button>
-                            <button
-                              className="btn-secondary !py-1.5 !px-3 !text-xs"
-                              title="Kalan tutar kapatılır; cari ekstrede ayrı satır olarak görünür"
-                              onClick={() => (k.kayit ? arsiveGonder(k.kayit.id) : k.siparis && siparisKapat(k.siparis.id))}
-                            >
-                              Arşive Gönder
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="text-[var(--muted)]">{k.aciklama || "—"}</td>
+                          <td>
+                            <VadeHucresi vade={k.vade} />
+                          </td>
+                          <td className={`num font-medium ${k.vade ? VADE_RENK[vadeDurumu(k.vade)] : ""}`}>{formatTL(k.kalan)}</td>
+                          <td>
+                            <div className="flex gap-2 justify-end">
+                              <KalemButonlari k={k} />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                 </tbody>
               </table>
             </div>
@@ -335,6 +534,28 @@ export default function OutstandingList({
           onConfirm={async (amount, secim, tarih) => {
             await tahsilEt(modalFor, { tutar: amount, ...secim, tarih });
             setModalFor(null);
+          }}
+        />
+      )}
+
+      {/* Çek / senet: kalan tutarın tamamı hazır gelir, onaylanınca Kasa'ya Çıkış olarak yazılır. */}
+      {odendiFor && (
+        <AmountModal
+          title={`Ödendi olarak işaretle — ${odendiFor.firma}`}
+          kalan={odendiFor.toplamTutar - odendiFor.alinanTutar}
+          hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri(kayitlar)}
+          defaultSecim={varsayilanSecim(odendiFor)}
+          onayEtiketi="Ödendi olarak işaretle"
+          onClose={() => setOdendiFor(null)}
+          onConfirm={async (amount, secim, tarih) => {
+            try {
+              await tahsilEt(odendiFor, { tutar: amount, ...secim, tarih });
+              setOdendiFor(null);
+            } catch (err) {
+              console.error(err);
+              alert("Ödeme kaydedilemedi, lütfen tekrar deneyin.");
+            }
           }}
         />
       )}
