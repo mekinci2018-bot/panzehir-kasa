@@ -442,6 +442,65 @@ body {
     background: var(--accent-orange-soft);
     color: var(--accent-orange);
   }
+
+  /* Finansal Durum Raporu (Genel Durum): ince çizgili, ferah rapor tabloları. Aynı stil ekranda ve
+     baskıda geçerli; yalnızca yazı boyu baskıda küçülür. */
+  .rapor-tablo {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+
+  .rapor-tablo th {
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 0 12px 7px;
+    border-bottom: 1px solid var(--border-strong);
+    white-space: nowrap;
+  }
+
+  .rapor-tablo td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  .rapor-tablo tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .rapor-tablo .sag {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .rapor-tablo tr.tiklanir {
+    cursor: pointer;
+  }
+
+  .rapor-tablo tr.tiklanir:hover {
+    background: var(--surface-hover);
+  }
+
+  .rapor-tablo tr.toplam td {
+    border-top: 1px solid var(--border-strong);
+    border-bottom: none;
+    font-weight: 600;
+    padding-top: 10px;
+  }
+
+  /* Bölüm başlığı: küçük büyük harf, altında ince ayırıcı çizgi. */
+  .rapor-bolum-baslik {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
 }
 
 @media print {
@@ -476,6 +535,21 @@ body {
   }
   .data-table th {
     position: static;
+  }
+  .rapor-tablo {
+    font-size: 10.5px;
+  }
+  .rapor-tablo thead {
+    display: table-header-group; /* her sayfada yeniden basılır */
+  }
+  .rapor-tablo td {
+    padding: 5px 8px;
+  }
+  .rapor-tablo th {
+    padding: 0 8px 4px;
+  }
+  .rapor-tablo tr {
+    break-inside: avoid;
   }
   /* Wide print-outs (Siparişler) go on landscape pages. */
   .yazdir-yatay {

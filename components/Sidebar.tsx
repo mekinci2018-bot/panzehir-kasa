@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Gauge,
   Wallet,
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -31,6 +32,7 @@ const NAV = [
   { href: "/verecekler", label: "Borçlar", icon: ArrowUpFromLine },
   { href: "/arsiv", label: "Arşiv", icon: Archive },
   { href: "/banka-bilgileri", label: "Banka Hesapları", icon: Landmark },
+  { href: "/genel-durum", label: "Genel Durum", icon: Gauge },
   { href: "/calisanlar", label: "Personel", icon: Users },
   { href: "/cop-kutusu", label: "Çöp Kutusu", icon: Trash2 },
   { href: "/ayarlar", label: "Ayarlar", icon: Settings },

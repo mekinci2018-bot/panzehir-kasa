@@ -28,3 +28,9 @@ export function siparisWaMesaji(s: Siparis, h: SiparisHesap): string {
   }
   return `Merhaba, ${urun} siparişinizle ilgili yazıyorum.`;
 }
+
+// Sipariş bağlamı olmayan, firma bakiyesi üzerinden yazılan hazır mesaj (Genel Durum → Kimden
+// alacağım). Gönderilmeden önce düzenlenebilir.
+export function firmaWaMesaji(bakiye: number): string {
+  return `Merhaba, hesabınızda ${formatTL(bakiye)} kalan bakiye görünüyor. Uygun olduğunuzda tamamlayabilir misiniz? İyi günler dileriz.`;
+}
