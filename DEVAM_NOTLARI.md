@@ -1,6 +1,18 @@
 # Devam notları
 
-Son güncelleme: 04.11.2026 (Aşama 2B bitti, çek / senetler canlı veriye girildi; sırada Aşama 3)
+Son güncelleme: 04.11.2026 (Aşama 2B, çek / senetler ve Aşama 4 bitti; sırada Aşama 2 birleştirmesi, sonra Aşama 3)
+
+## ⚠️ Yarın ilk iş: iş bilgisayarındaki Aşama 2'yi birleştirmek
+
+**`git pull` YAPMADAN ÖNCE** iş bilgisayarında `git status` ile commit edilmemiş Aşama 2 (Transfer + Mahsup) kodu olup olmadığına bakılacak. Sıra:
+
+1. `git status` (izlenmeyen dosyalar dahil: `git status --porcelain -uall`), ayrıca `git stash list` ve `git fsck --lost-found` ile kayıp commit kontrolü.
+2. Değişiklik varsa **önce yedek amaçlı ayrı dal:** `git checkout -b asama2-transfer-mahsup` → `git add -A` (`import/` zaten `.gitignore`'da) → commit.
+3. `main`'e dön, `git pull` ile 04.11 commit'lerini al (Genel Durum, Borçlar firma gruplaması, çek / senet, menü, Aşama 4 personel).
+4. `asama2-transfer-mahsup` dalını `main`'e birleştir. Çakışma beklenen dosyalar: `components/OutstandingList.tsx`, `components/Sidebar.tsx`, `app/kasa/*`, `app/arsiv/page.tsx`, `lib/types.ts`, `lib/db.ts`, `lib/hareketler.ts` — **iki taraf da korunacak** (Transfer/Mahsup kurgusu + firma gruplaması/personel birlikte).
+5. `npx tsc --noEmit`, `npx eslint`, `npm run build` ve localhost'ta birlikte çalıştığının kontrolü; sonra push.
+
+Not: 04.11 akşamı bu bilgisayarda (ev) `git status` temizdi, `git fsck` kayıp commit bulmadı ve `git log --all -S` ile arandığında Transfer / Mahsup **kod olarak hiç yoktu** — dolayısıyla bu kod yalnızca iş bilgisayarında, commit edilmemiş durumda olabilir. 04.11'de Kasa, Alacaklar, Borçlar, Arşiv ve `OutstandingList` dosyalarına bilerek dokunulmadı (yalnızca `OutstandingList` 2790d3a'da gruplama için değişti), çakışma yüzeyi küçük tutuldu.
 
 ## 04.11.2026'da yapılanlar
 
@@ -33,6 +45,29 @@ Son güncelleme: 04.11.2026 (Aşama 2B bitti, çek / senetler canlı veriye giri
 - Genel Durum'daki "Vadesi Yaklaşan Ödemeler" tablosu bu kayıtlarla doldu; Ticari Borçlar toplamı bunları **bir kez** sayıyor (tedarikçi bakiyesinin içinde), alt tablo yalnızca döküm.
 - Not: `scripts/yedek-al.mjs` servis hesabı anahtarı istiyor, o dosya bu bilgisayarda yok; görseller dahil tam yedek için Ayarlar → "Şimdi yedek al" (Drive) kullanılmalı.
 
+### Aşama 3'ün ilk adımı hazır: tutarsızlık raporu (salt okuma, henüz çalıştırılmadı)
+
+- `scripts/tutarsizlik-rapor.mjs` — hiçbir şey yazmaz. Hesap mantığı uygulamayla birebir aynı (`siparisOdemeleri`, `siparisHesap`, `kayitBakiyesi`, `siparisBakiyesi`).
+- **A)** Bakiye farkı olan firmalar: `cari bakiye` ile `sipariş kalanı + açık alacak kalemleri − açık borç kalemleri` karşılaştırması, fark ve nedeni (siparişleri aşan ödeme / avans, hangi siparişte ne kadar).
+- **B)** Siparişlere dağıtılmamış tahsilatlar — Aşama 3'ün asıl kümesi: firmanın açık siparişi varken siparişe bağlanmamış düz Kasa Girişleri (`toplamTutar = alinanTutar`, `siparisId` yok, veresiye değil), firma başına kayıt listesi, dağıtılabilir tutar ve siparişleri aşıp avansa kalacak kısım.
+- **C)** Açık siparişi olmayan ama bağlanmamış tahsilatı olan firmalar (bilgi amaçlı).
+- Çalıştırma: `node scripts/tutarsizlik-rapor.mjs` (tamamı için `--hepsi`). **Çıktı alınıp Aşama 3'ün planı buna göre netleştirilecek.**
+
+### Aşama 4: Personel maaş carisi (localhost'ta test edildi, onaylandı, commit edildi)
+
+- **Kart alanları:** Ad Soyad, Maaş türü (Haftalık / Aylık), Maaş tutarı, Saatlik mesai ücreti, Geçmişten devreden alacak + tarihi, Aktif / Pasif. `components/PersonelFormModal.tsx`.
+- **Kişisel veriler kaldırıldı:** TC kimlik no, telefon, adres, acil durum kişisi, acil telefon, not — arayüzden çıktı **ve 04.11.2026'da `scripts/personel-alan-temizle.mjs --yaz` ile veritabanından silindi** (`deleteField()`). Betik kuru çalıştırmayla başlar, önce `calisanlar` yedeğini `import/yedek-PERSONEL-ALAN-ONCESI-…` dosyasına alır (silinen değerler **yalnızca o yedekte** kaldı), kişisel değerleri ekrana basmaz, sonunda Firestore'dan yeniden okuyup hiç kalmadığını doğrular. `lib/types.ts`'te bu alanlar isteğe bağlı olarak duruyor (eski yedekten geri yükleme bozulmasın diye).
+- **Yeni `personelHareketleri` koleksiyonu:** hak ediş, mesai, ek, kesinti. **Ödemeler burada tutulmuyor** — personele ödeme `personelId` taşıyan bir Kasa Çıkış kaydıdır (`personelOdemeYap`). Böylece Kasa'dan personel seçilerek girilen çıkışlar da aynı ekstreye düşüyor ve para iki kez sayılmıyor (Aşama 3'teki "tek kaynak" kuralının aynısı). `lib/personel.ts` iki kaynağı birleştiriyor.
+- **Kalan** = devreden + hak edişler + mesai + ekler − kesintiler − ödemeler.
+- **Otomatik hak ediş:** `components/HakEdisOtomatik.tsx`, `app/layout.tsx`'te duruyor (hiçbir şey çizmiyor), uygulama açılışında eksik dönemleri tamamlıyor. Belge kimliği `{personelId}_{dönem}` → aynı dönem ikinci kez yazılamıyor. **Dönem kimliği kararı:** notlarda `2026-W45` yazıyordu, yerine haftanın **Pazartesi tarihi** kullanıldı (`h2026-11-02`) ve aylık için `a2026-11`; ISO hafta numarasının yıl sonu karmaşası olmadan aynı sonucu veriyor. Geriye dönük tamamlama devreden tarihinden başlar (devreden yoksa yalnızca bulunduğumuz dönem), en fazla 26 hafta / 12 ay. Devreden tarihi dönem ortasındaysa o dönem devredene dahil sayılır, bir sonraki dönemden başlar.
+- **Mesai Ekle:** tarih + saat → saat × saatlik ücret; tutar elle de girilebilir. **Ek / Kesinti** ekstre sayfasından. Her satır (otomatik hak ediş dahil) `⋯` menüsünden düzenlenip silinebiliyor.
+- **Liste:** kart görünümü — maaş türü/tutarı, vurgulu **Kalan**, son ödeme tarihi/tutarı, "Bu hafta / bu ay işlendi" (işlenmediyse tek tıkla işler), Ödeme Yap / Mesai Ekle / Ekstre; `⋯` → Düzenle, Pasif yap, (hiç hareketi ve kasa kaydı yoksa) Sil. Üstte "Personel borcu" şeridi, altta pasif personel ayrı grup.
+- **Ekstre `/calisanlar/[id]`:** dört kutu (Devreden, Toplam hak ediş, Toplam ödenen, vurgulu Kalan), tarih aralığı (aralık başı devir satırıyla), Tarih / Açıklama / Hak ediş / Ödeme / yürüyen Bakiye, Yazdır / PDF ("Personel Maaş Ekstresi"). `FirmaLink` artık personel adlarını `/calisanlar/{id}` ekstresine bağlıyor (eskiden liste sayfasına gidiyordu).
+- **Genel Durum:** Ticari Borçlar bölümünün altında **Personel** tablosu (aktif personel, maaş türü/tutarı, kalan + toplam). **Karar (04.11):** personel borcu Ticari Borçlar toplamına girmez (ticari borç değil) ama **Net Finansal Durum'dan düşülür** → Net = Hazır değerler + Ticari alacaklar − Ticari borçlar − Personel borcu. Özet şeridindeki açıklama satırı ve Ticari Borçlar kutusunun altındaki "Personel borcu ayrı: ₺X" satırı bunu gösteriyor; yazdırma çıktısı da aynı.
+- `lib/yedekBicimi.ts` → tarayıcı yedeği listesine `personelHareketleri` eklendi (yoksa "Bilgisayara İndir" bu koleksiyonu atlardı). Firestore kuralları koleksiyon adı bazlı değil, ek kural gerekmedi.
+- **Doğrulama:** `tsc --noEmit`, `eslint`, `npm run build` temiz; dönem ve ekstre mantığı için 32 birim testi çalıştırıldı ve hepsi geçti (Pazartesi bulma ve yıl sonu, dönem kimliği/etiketi, devreden tarihine göre dönem üretimi, aynı dönemin iki kez yazılmaması, pasif/maaşsız personel, 26 hafta / 12 ay sınırı, kalan hesabı, ekstrenin tarih sırası ve yürüyen bakiyesi, pasif personelin toplamdan düşmesi).
+- **Kalan tek parça:** Kasa özet şeridine "Personel Borcu" kartı — Aşama 2 birleştirmesinden sonra eklenecek (Kasa dosyalarına çakışma riski yüzünden bilerek dokunulmadı).
+
 ## 03.11.2026'da yapılanlar
 
 - İş bilgisayarına `git pull` yapıldı; ev bilgisayarının 02.11 commit'leri (`a6e98a9`, `44f5a2b`, `20afc2e`) çekildi. `npm install` bağımlılıklarda değişiklik bulmadı — iki bilgisayar senkron.
@@ -60,7 +95,7 @@ Son güncelleme: 04.11.2026 (Aşama 2B bitti, çek / senetler canlı veriye giri
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
-**Sıra (04.11.2026 kararı):** önce **Aşama 3** — tahsilatların siparişlere dağıtılması, **Mahsup dahil** (aşağıdaki Aşama 2'nin Mahsup bölümü Aşama 3'ün içinde yapılacak) ve **Alacaklar'ın firma bazında gruplanması** (Borçlar'da çalışan `gruplu` yapısı Alacaklar'a da açılacak). Ardından **Aşama 4** — personel maaş carisi. **Transfer (virman)** beklemede: Aşama 2'nin yalnızca Transfer bölümü yapılmadı, Aşama 3 ve 4'ten sonra ele alınacak.
+**Sıra (04.11.2026 akşamı itibarıyla):** **Aşama 4 bitti.** Yarın ilk iş, en üstteki uyarıdaki gibi iş bilgisayarındaki Aşama 2 (Transfer + Mahsup) kodunu ayrı dala alıp `main` ile birleştirmek. Ardından **Aşama 3** — tahsilatların siparişlere dağıtılması; Mahsup orada kalmadıysa (iş bilgisayarından gelen kod onu kapsıyorsa) yalnızca dağıtım + **Alacaklar'ın firma bazında gruplanması** (Borçlar'da çalışan `gruplu` yapısı Alacaklar'a açılacak) kalır. Son olarak Kasa özet şeridine "Personel Borcu" kartı.
 
 ### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup
 
@@ -92,7 +127,7 @@ Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce
 
 Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca çek / senet kayıtlarının girilmesi kaldı (aynı bölümün sonundaki adımlar).
 
-### Aşama 3 — Tahsilatların siparişlere dağıtılması (**SIRADAKİ İŞ**; Mahsup ve Alacaklar gruplaması dahil)
+### Aşama 3 — Tahsilatların siparişlere dağıtılması (**Aşama 2 birleştirmesinden sonra sıradaki iş**; Mahsup ve Alacaklar gruplaması dahil)
 
 - **Önce, hiçbir şey değiştirmeden tutarsızlık raporu:** her firma için (cari bakiye) ile (siparişlerin kalan toplamı + diğer alacaklar) karşılaştırılacak; farkı olan firmalar ve farkın nedeni (hangi tahsilat siparişlere dağıtılmamış) listelenecek. Onaydan sonra, yedek alarak, dağıtılmamış tahsilatlar aynı kuralla (eskiden yeniye) dağıtılacak ve sonuç raporlanacak.
 - **Önemli bulgu (03.11.2026):** sorun yalnızca "dağıtım yok" değil. Firmadan alınan düz bir Kasa Girişi şu anda cariye **hiç** yansımıyor — `toplamTutar = alinanTutar` olduğu için "peşin satış" gibi modelleniyor ve ekstrede borç + alacak satırı birbirini sıfırlıyor. Bu yüzden `tur: "tahsilat"` diye ayrı bir kayıt türü gerekiyor: ekstrede yalnızca alacak satırı üretir, bakiyeye dağıtılmamış kısmı kadar etki eder.
@@ -105,7 +140,9 @@ Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca 
 - **Alacaklar firma bazında gruplanacak:** Borçlar'da 04.11'de çalışmaya başlayan yapı (`components/OutstandingList.tsx` → `gruplu` bayrağı) Alacaklar'a da açılacak; aynı firmanın siparişleri (örn. EGESER REKLAM) tek satırda toplanacak, satıra tıklayınca açılacak. Eksik kalan tek parça: **firma satırındaki Tahsilat Al / Ödeme Yap butonu** — firma bazında tahsilat, dağıtım kuralı (eskiden yeniye) bu aşamada yazılınca eklenecek.
 - **Mahsup (aracılı ödeme) bu aşamada yapılacak:** kurgusu yukarıdaki Aşama 2 bölümünde duruyor (para hareketi üretmez, iki carinin bakiyesini düşürür, komisyon farkı `mahsupId` ile bağlı ikinci belge olarak yazılır). Ödeyenin alacağının düşürülmesi Aşama 3'ün dağıtım kuralını kullandığı için ikisi birlikte yapılıyor.
 
-### Aşama 4 — Personel maaş carisi
+### Aşama 4 — Personel maaş carisi · **BİTTİ** (04.11.2026)
+
+Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki özgün plan karşılaştırma için duruyor; yapılanla iki farkı var: dönem kimliği ISO hafta numarası yerine haftanın Pazartesi tarihi, ve ödemeler ayrı hareket türü değil, `personelId` taşıyan Kasa kayıtları.
 
 - Personel kartı alanları: Ad Soyad, Maaş türü (Haftalık / Aylık), Maaş tutarı, Saatlik mesai ücreti, Geçmişten devreden alacak (başlangıç bakiyesi + tarihi), Aktif / Pasif.
 - **Kaldırılacak alanlar:** TC kimlik no, telefon, adres, acil durum kişisi, acil telefon, not. Önce yedek; sonra arayüzden kaldırma **ve** veritabanından `deleteField()` ile silme (kişisel veri saklamamak için). Kuru çalıştırmalı betik.
