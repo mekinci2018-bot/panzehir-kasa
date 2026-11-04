@@ -2,17 +2,9 @@
 
 Son güncelleme: 04.11.2026 (Aşama 2B, çek / senetler ve Aşama 4 bitti; sırada Aşama 2 birleştirmesi, sonra Aşama 3)
 
-## ⚠️ Yarın ilk iş: iş bilgisayarındaki Aşama 2'yi birleştirmek
+## ⚠️ İş bilgisayarına geçerken
 
-**`git pull` YAPMADAN ÖNCE** iş bilgisayarında `git status` ile commit edilmemiş Aşama 2 (Transfer + Mahsup) kodu olup olmadığına bakılacak. Sıra:
-
-1. `git status` (izlenmeyen dosyalar dahil: `git status --porcelain -uall`), ayrıca `git stash list` ve `git fsck --lost-found` ile kayıp commit kontrolü.
-2. Değişiklik varsa **önce yedek amaçlı ayrı dal:** `git checkout -b asama2-transfer-mahsup` → `git add -A` (`import/` zaten `.gitignore`'da) → commit.
-3. `main`'e dön, `git pull` ile 04.11 commit'lerini al (Genel Durum, Borçlar firma gruplaması, çek / senet, menü, Aşama 4 personel).
-4. `asama2-transfer-mahsup` dalını `main`'e birleştir. Çakışma beklenen dosyalar: `components/OutstandingList.tsx`, `components/Sidebar.tsx`, `app/kasa/*`, `app/arsiv/page.tsx`, `lib/types.ts`, `lib/db.ts`, `lib/hareketler.ts` — **iki taraf da korunacak** (Transfer/Mahsup kurgusu + firma gruplaması/personel birlikte).
-5. `npx tsc --noEmit`, `npx eslint`, `npm run build` ve localhost'ta birlikte çalıştığının kontrolü; sonra push.
-
-Not: 04.11 akşamı bu bilgisayarda (ev) `git status` temizdi, `git fsck` kayıp commit bulmadı ve `git log --all -S` ile arandığında Transfer / Mahsup **kod olarak hiç yoktu** — dolayısıyla bu kod yalnızca iş bilgisayarında, commit edilmemiş durumda olabilir. 04.11'de Kasa, Alacaklar, Borçlar, Arşiv ve `OutstandingList` dosyalarına bilerek dokunulmadı (yalnızca `OutstandingList` 2790d3a'da gruplama için değişti), çakışma yüzeyi küçük tutuldu.
+**Aşama 2 ev bilgisayarında yeniden yazıldı; iş bilgisayarında `git status`'ta eski Transfer/Mahsup değişikliği görünürse birleştirme, `git stash` ile kenara al, sonra `git pull`.**
 
 ## 04.11.2026'da yapılanlar
 
@@ -44,6 +36,27 @@ Not: 04.11 akşamı bu bilgisayarda (ev) `git status` temizdi, `git fsck` kayıp
 - `scripts/cek-senet-gir.mjs`: kuru çalıştırma varsayılan, `--yaz` ile uygular. Her çalıştırmada (kuru dahil) `kasaKayitlari` + `firmalar` yedeğini `import/` klasörüne alır (`yedek-CEK-SENET-ONCESI-…`). Belge kimlikleri vade + belge no'dan türetilir (`vadeli-<firma>-<vade>-<no>`) ve aynı firma/vade/tutar üçlüsü varsa atlanır — betik ikinci kez çalışsa da çift kayıt olmaz. Firma eşleştirmesi tek sonuca düşmezse hiçbir şey yazmadan durur. Yazmadan sonra Firestore'dan yeniden okuyup firma bazında açık kalem sayısı ve toplamları doğrular.
 - Genel Durum'daki "Vadesi Yaklaşan Ödemeler" tablosu bu kayıtlarla doldu; Ticari Borçlar toplamı bunları **bir kez** sayıyor (tedarikçi bakiyesinin içinde), alt tablo yalnızca döküm.
 - Not: `scripts/yedek-al.mjs` servis hesabı anahtarı istiyor, o dosya bu bilgisayarda yok; görseller dahil tam yedek için Ayarlar → "Şimdi yedek al" (Drive) kullanılmalı.
+
+### Aşama 2: Transfer + Mahsup (ev bilgisayarında yazıldı, localhost'ta test edildi)
+
+**Veri kurgusu.** `KasaKaydi.tur`: `"transfer" | "mahsup" | "mahsup-komisyon"`. Üçü de `alinanTutar = toplamTutar` ve `durum: "tamamlandi"` ile kaydediliyor; böylece "açık kalem" süzen her yer (Alacaklar, Borçlar, Kasa'nın Tahsil Edilecek / Ödenecek kartları) onları **kendiliğinden** görmezden geliyor. Gerçek davranış iki yerde: `lib/hareketler.ts` (para hareketi) ve yeni **`lib/kayit.ts`** (`cariEtkileri`, `harcamaTutari`, `kayitFirmayaAitMi`, rozet etiketleri).
+
+**Transfer.**
+- Tek belge, iki bacak: kaynak `odemeSekli`/`bankaHesapId`, hedef `hedefOdemeSekli`/`hedefBankaHesapId`. `hareketlerOf()` kaynakta çıkış, hedefte giriş üretiyor (`bacak: "kaynak" | "hedef"`), toplam kasa değişmiyor, iki hesabın hareketlerinde görünüyor. `firmaId` yok → cariye, ekstreye, Alacaklar'a hiç girmiyor.
+- `components/TransferModal.tsx`: Nakit Kasa + bütün banka hesapları (Kart / POS yok), her yönde; "⇅ Yönü çevir"; listelerde hesap sahibi önde (`hesapEtiketi`); en altta "+ Yeni hesap ekle…" (sahip + banka, eklenince seçili geliyor); kaynak = hedef engelli; bakiye yetersizse turuncu uyarı ama kayıt engellenmiyor. Düzenleme ve "Sil" aynı pencerede (tek belge olduğu için iki bacak birlikte kalkıyor / geri geliyor).
+- Açılış yerleri: Kasa'daki İşlem listesi (Transfer… / Mahsup… seçilince ilgili pencere açılıyor, satırın işlemi bozulmuyor), Kasa başlığındaki **Transfer** butonu ve Banka Hesapları sayfasındaki **Transfer** butonu.
+
+**Mahsup (aracılı ödeme).**
+- `components/MahsupModal.tsx`: tarih, ödeyen (müşteri), alan (tedarikçi / personel / gider kalemi), çekilen tutar, ödeme şekli (Kredi Kartı + "nereden çekildi" / Banka Havalesi / Nakit — **yalnızca bilgi**), karşı tarafa sayılan tutar (varsayılan: çekilenle aynı), açıklama. Pencerede canlı özet: kimin bakiyesinden ne düşecek, fark varsa komisyon satırı.
+- Etki: ödeyenin bakiyesi **çekilen** tutar kadar düşüyor, alanın borcu **sayılan** tutar kadar düşüyor; Nakit / Banka / Kart-POS ve Toplam Kasa değişmiyor (`hareketlerOf` boş dönüyor).
+- Alan **gider kalemiyse** gider aynı anda doğup kapandığı için bakiyesi değişmiyor, ekstrede borç + alacak satırı olarak görünüyor ve **Harcama sekmesinde + toplamında** sayılıyor. Alan **personelse** sayılan tutar personel ekstresine **ödeme** olarak düşüyor (`lib/personel.ts`), personel kalanı azalıyor.
+- **Komisyon farkı** (örn. 10.000 çekildi, 9.700 sayıldı → 300): `POS KOMİSYONU` gider kalemine (yoksa `komisyonKalemiBulVeyaOlustur` ile oluşturuluyor) `mahsupId` ile bağlı **ayrı** bir gider belgesi yazılıyor. Sayılan tutar düzenlenip fark kapanırsa belge siliniyor, fark yeniden açılırsa yeniden yazılıyor. Silme / geri alma ikisini birlikte taşıyor (`kayitSil(id, ekIds)`, `kayitGeriYukle(id, ekIds)`); Çöp Kutusu'nda komisyon ayrı satır olarak listelenmiyor, mahsupla birlikte dönüyor.
+- Başlatma: Kasa'daki "Bugün girilenler" satırlarında ve Alacaklar / Borçlar satırlarında `⋯` → **Mahsup** (alacakta ödeyen, borçta alan taraf önceden seçili), firma ekstresinde **Mahsup** butonu (müşteride ödeyen, tedarikçi/giderde alan taraf seçili).
+- Görünüm: iki firmanın ekstresinde "Mahsup · A → C"; Arşiv'de **Transfer** ve **Mahsup** sekmeleri, satırlarda tür rozeti ve mahsupta "A → C" gösterimi; **Gelen / Giden / Net** toplamlarına girmiyorlar (kendi toplamları şeritte ayrıca yazıyor); komisyon ve gider mahsubu Harcama'da. Yazdırma çıktısında Giriş / Çıkış sütunları boş, satırda tür işareti var.
+
+**Doğrulama:** `tsc --noEmit`, `eslint`, `npm run build` temiz; **46 birim testi** çalıştırıldı ve hepsi geçti — transferin iki bacağı ve toplam kasayı değiştirmemesi, aylık kasa dağılımı (nakit −, banka +), mahsupta iki tarafın etkisi, 10.000 = 9.700 + 300 aritmetiği, komisyon belgesinin bakiye bırakmaması ama Harcama'ya girmesi, gider kalemine ve personele mahsup, ekstre satırları ve açıklamaları, normal kayıtların bozulmadığı.
+
+**Aşama 3'e bırakılan:** mahsubun **sipariş kalanına** yansıması (şimdilik yalnızca cari bakiye).
 
 ### Aşama 3'ün ilk adımı hazır: tutarsızlık raporu (salt okuma, henüz çalıştırılmadı)
 
@@ -95,13 +108,11 @@ Not: 04.11 akşamı bu bilgisayarda (ev) `git status` temizdi, `git fsck` kayıp
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
-**Sıra (04.11.2026 akşamı itibarıyla):** **Aşama 4 bitti.** Yarın ilk iş, en üstteki uyarıdaki gibi iş bilgisayarındaki Aşama 2 (Transfer + Mahsup) kodunu ayrı dala alıp `main` ile birleştirmek. Ardından **Aşama 3** — tahsilatların siparişlere dağıtılması; Mahsup orada kalmadıysa (iş bilgisayarından gelen kod onu kapsıyorsa) yalnızca dağıtım + **Alacaklar'ın firma bazında gruplanması** (Borçlar'da çalışan `gruplu` yapısı Alacaklar'a açılacak) kalır. Son olarak Kasa özet şeridine "Personel Borcu" kartı.
+**Sıra (04.11.2026 akşamı itibarıyla):** **Aşama 2, 2B ve 4 bitti.** Sıradaki iş **Aşama 3** — tahsilatların siparişlere dağıtılması: önce `scripts/tutarsizlik-rapor.mjs` çıktısı, sonra `KasaKaydi.dagitim` kurgusu ve **Alacaklar'ın firma bazında gruplanması** (Borçlar'da çalışan `gruplu` yapısı Alacaklar'a açılacak). Aşama 3'te ayrıca **mahsubun sipariş kalanına yansıması** yapılacak (şimdilik yalnızca cari bakiyeyi etkiliyor). Son olarak Kasa özet şeridine "Personel Borcu" kartı.
 
-### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup
+### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup · **BİTTİ** (04.11.2026, ev bilgisayarında yeniden yazıldı)
 
-> **Durum (04.11.2026):** Bu aşamada **hiç kod yazılmadı** — yalnızca aşağıdaki kurgu kararları alındı (03.11). Transfer beklemede, Mahsup Aşama 3'e taşındı. Kararlar aynen geçerli.
->
-> Doğrulama (04.11.2026): `git log --all -S"mahsup"` / `-S"hedefOdemeSekli"` / `-S'tur: "transfer"'` ile tüm dallarda arandı — bu kelimeler **yalnızca bu not dosyasında** geçiyor, hiçbir commit'te kod olarak eklenmemiş. `lib/types.ts` → `Yon = "gelen" | "giden"` (ayrı bir `tur` alanı yok), `app/kasa/KayitRow.tsx`'teki İşlem listesi hâlâ sadece **Giriş / Çıkış**. Yani canlıda (Vercel) da Transfer / Mahsup seçeneği yok. Kurgu tartışması yapıldığı için "yapıldı" izlenimi oluşabiliyor; bu satır onun için duruyor.
+> Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki kurgu kararlarının tamamı uygulandı; tek sapma, mahsupta alan tarafın türünün (`karsiTur`) kayda yazılması ve mahsubun **sipariş kalanına** yansımasının Aşama 3'e bırakılması (şimdilik yalnızca cari bakiye).
 
 **Transfer**
 
