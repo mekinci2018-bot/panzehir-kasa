@@ -13,14 +13,14 @@ export default function FirmaLink({
   ad: string;
   className?: string;
 }) {
-  const href = firmaId ? `/firmalar/${firmaId}` : personelId ? "/calisanlar" : null;
+  const href = firmaId ? `/firmalar/${firmaId}` : personelId ? `/calisanlar/${personelId}` : null;
   if (!href) return <span className={className}>{ad}</span>;
   return (
     <Link
       href={href}
       className={`${className} hover:underline underline-offset-2 decoration-[var(--border-strong)]`}
       onClick={(e) => e.stopPropagation()}
-      title={firmaId ? "Cari ekstreyi aç" : "Personel"}
+      title={firmaId ? "Cari ekstreyi aç" : "Personel maaş ekstresini aç"}
     >
       {ad}
     </Link>

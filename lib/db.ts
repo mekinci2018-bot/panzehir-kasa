@@ -16,7 +16,7 @@ import {
 import { getDb, ensureSignedIn } from "./firebase";
 import { monthKeyOf, todayISO } from "./format";
 import { firmaAdiDuzenle, firmaAnahtari } from "./firma";
-import type { Ayarlar, BankaHesabi, Calisan, Firma, FirmaTuru, GorselAlani, KasaKaydi, Odeme, Siparis, TahsilatNotu } from "./types";
+import type { Ayarlar, BankaHesabi, Calisan, Firma, FirmaTuru, GorselAlani, KasaKaydi, Odeme, PersonelHareketi, Siparis, TahsilatNotu } from "./types";
 
 // App-wide preferences, shared by everyone using the account (sistem/ayarlar).
 export async function ayarGuncelle(patch: Partial<Ayarlar>) {
@@ -630,4 +630,93 @@ export async function deleteCalisan(id: string) {
   return deleteDoc(doc(getDb(), CALISANLAR, id));
 }
 
-export { KAYITLAR, BANKALAR, CALISANLAR, FIRMALAR, FIRMA_ADLARI, SIPARISLER, GORSELLER, ONIZLEMELER };
+// ---- Personel maaş carisi (Aşama 4) ----
+// Ödemeler burada tutulmaz: personele yapılan ödeme, personelId taşıyan bir Kasa kaydıdır
+// (personelOdemeYap), böylece Kasa'dan girilen ödemeler de aynı ekstreye düşer.
+
+const PERSONEL_HAREKETLERI = "personelHareketleri";
+
+type PersonelHareketGirdisi = {
+  personelId: string;
+  tur: PersonelHareketi["tur"];
+  tarih: string;
+  tutar: number;
+  aciklama?: string;
+  saat?: number;
+  donem?: string;
+};
+
+function hareketVerisi(input: PersonelHareketGirdisi) {
+  const { aciklama, saat, donem, ...rest } = input;
+  const simdi = Date.now();
+  return {
+    ...rest,
+    ...(aciklama?.trim() ? { aciklama: aciklama.trim() } : {}),
+    ...(saat && saat > 0 ? { saat } : {}),
+    ...(donem ? { donem } : {}),
+    createdAt: simdi,
+    updatedAt: simdi,
+  };
+}
+
+export async function addPersonelHareketi(input: PersonelHareketGirdisi) {
+  await ensureSignedIn();
+  return addDoc(collection(getDb(), PERSONEL_HAREKETLERI), hareketVerisi(input));
+}
+
+export async function updatePersonelHareketi(id: string, patch: Partial<PersonelHareketi>) {
+  await ensureSignedIn();
+  const next: Record<string, unknown> = { ...patch, updatedAt: Date.now() };
+  if ("aciklama" in patch && !patch.aciklama) next.aciklama = deleteField();
+  if ("saat" in patch && !patch.saat) next.saat = deleteField();
+  return updateDoc(doc(getDb(), PERSONEL_HAREKETLERI, id), next);
+}
+
+export async function deletePersonelHareketi(id: string) {
+  await ensureSignedIn();
+  return deleteDoc(doc(getDb(), PERSONEL_HAREKETLERI, id));
+}
+
+// Otomatik hak ediş. Belge kimliği `${personelId}_${donem}` olduğu için aynı dönem ikinci kez
+// yazılamaz: iki sekme aynı anda açılsa da tek satır oluşur.
+export async function hakEdisYaz(
+  personelId: string,
+  donemler: { donem: string; tarih: string; tutar: number }[]
+) {
+  if (donemler.length === 0) return;
+  await ensureSignedIn();
+  const batch = writeBatch(getDb());
+  for (const d of donemler) {
+    batch.set(doc(getDb(), PERSONEL_HAREKETLERI, `${personelId}_${d.donem}`), {
+      personelId,
+      tur: "hakedis",
+      tarih: d.tarih,
+      tutar: d.tutar,
+      donem: d.donem,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  }
+  return batch.commit();
+}
+
+// Personele ödeme: Kasa'ya personelId ile Çıkış kaydı yazar (Kasa'daki "Çıkış" ile aynı belge türü).
+export async function personelOdemeYap(
+  calisan: { id: string; adSoyad: string },
+  odeme: { tutar: number; tarih: string; odemeSekli: KasaKaydi["odemeSekli"]; bankaHesapId?: string; kartAciklama?: string; aciklama?: string }
+) {
+  return addKasaKaydi({
+    tarih: odeme.tarih,
+    firma: calisan.adSoyad,
+    personelId: calisan.id,
+    aciklama: odeme.aciklama?.trim() || "Maaş ödemesi",
+    toplamTutar: odeme.tutar,
+    alinanTutar: odeme.tutar,
+    odemeSekli: odeme.odemeSekli,
+    bankaHesapId: odeme.bankaHesapId,
+    kartAciklama: odeme.kartAciklama,
+    yon: "giden",
+  });
+}
+
+export { KAYITLAR, BANKALAR, CALISANLAR, FIRMALAR, FIRMA_ADLARI, SIPARISLER, GORSELLER, ONIZLEMELER, PERSONEL_HAREKETLERI };

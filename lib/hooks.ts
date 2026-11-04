@@ -14,9 +14,9 @@ import {
   type Query,
 } from "firebase/firestore";
 import { getDb, ensureSignedIn, cikistaCalistir } from "./firebase";
-import { BANKALAR, CALISANLAR, FIRMALAR, GORSELLER, KAYITLAR, ONIZLEMELER, SIPARISLER } from "./db";
+import { BANKALAR, CALISANLAR, FIRMALAR, GORSELLER, KAYITLAR, ONIZLEMELER, PERSONEL_HAREKETLERI, SIPARISLER } from "./db";
 import { tumHareketler } from "./hareketler";
-import type { Ayarlar, BankaHesabi, Calisan, Firma, Gorsel, KasaKaydi, Siparis, YedekDurumu } from "./types";
+import type { Ayarlar, BankaHesabi, Calisan, Firma, Gorsel, KasaKaydi, PersonelHareketi, Siparis, YedekDurumu } from "./types";
 
 // ---- Shared listeners ----
 // Each collection has one Firestore listener for the whole session, however many pages and modals
@@ -157,8 +157,19 @@ export function useBankaHesaplari() {
 }
 
 export function useCalisanlar() {
-  const { veri, loading } = useKoleksiyon<Calisan>(CALISANLAR, () => collection(getDb(), CALISANLAR));
+  const { veri, loading } = useKoleksiyon<Calisan>(CALISANLAR, () => collection(getDb(), CALISANLAR), (v) =>
+    v.sort((a, b) => a.adSoyad.localeCompare(b.adSoyad, "tr"))
+  );
   return { calisanlar: veri, loading };
+}
+
+// Personel maaş carisi hareketleri (hak ediş / mesai / ek / kesinti). Ödemeler burada değil,
+// personelId taşıyan Kasa kayıtlarında; lib/personel.ts ikisini birleştiriyor.
+export function usePersonelHareketleri() {
+  const { veri, loading } = useKoleksiyon<PersonelHareketi>(PERSONEL_HAREKETLERI, () =>
+    collection(getDb(), PERSONEL_HAREKETLERI)
+  );
+  return { hareketler: veri, loading };
 }
 
 // The backup status document (written by the server after every backup), shown in the menu.

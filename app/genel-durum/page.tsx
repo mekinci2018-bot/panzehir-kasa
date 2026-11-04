@@ -11,14 +11,23 @@ import { SiparisOdemeModal } from "@/components/SiparisDetayModal";
 import { hesapEtiketi } from "@/components/OdemeSekliSelect";
 import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
-import { kartOnerileri, useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import {
+  kartOnerileri,
+  useBankaHesaplari,
+  useCalisanlar,
+  useFirmalar,
+  useKasaKayitlari,
+  usePersonelHareketleri,
+  useSiparisler,
+} from "@/lib/hooks";
+import { MAAS_TURU_LABEL, maasTuru, personelBorcuToplami } from "@/lib/personel";
 import { tahsilEt } from "@/lib/db";
 import { FIRMA_TURU_LABEL, firmaTuru, kayitBakiyesi, siparisBakiyesi } from "@/lib/firma";
 import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
 import { signed, tumHareketler, type Hareket } from "@/lib/hareketler";
 import { firmaWaMesaji, siparisWaMesaji } from "@/lib/whatsapp";
 import { daysSince, formatDate, formatTL, longDateTR, vadeDurumu, type VadeDurumu } from "@/lib/format";
-import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "@/lib/types";
+import type { Calisan, Firma, FirmaTuru, KasaKaydi, Siparis } from "@/lib/types";
 
 // Kuruş altı artıklar (kayan nokta toplamları) bakiye sayılmaz.
 const EPS = 0.005;
@@ -84,6 +93,8 @@ export default function GenelDurumPage() {
   const { siparisler } = useSiparisler();
   const { firmalar } = useFirmalar();
   const { hesaplar } = useBankaHesaplari();
+  const { calisanlar } = useCalisanlar();
+  const { hareketler: personelHareketleri } = usePersonelHareketleri();
   const [acikHesap, setAcikHesap] = useState<string | null>(null);
   const [tahsilatCari, setTahsilatCari] = useState<Cari | null>(null);
   const [telefonFirma, setTelefonFirma] = useState<Firma | null>(null);
@@ -236,7 +247,16 @@ export default function GenelDurumPage() {
     [kayitlar]
   );
 
-  const net = hazirDegerler + alacakToplam - borcToplam;
+  // Personel maaş borcu: aktif personelin kalan alacakları. Ticari borçlardan ayrı tutuluyor
+  // (ticari değil, personel yükümlülüğü), bu yüzden Ticari Borçlar toplamına eklenmiyor.
+  const personel = useMemo(
+    () => personelBorcuToplami(calisanlar, personelHareketleri, kayitlar),
+    [calisanlar, personelHareketleri, kayitlar]
+  );
+
+  // Personel borcu da gerçek bir yükümlülük: net durumdan düşülür. Ticari Borçlar toplamından ise
+  // ayrı tutulur (ticari değil), raporda kendi tablosunda görünür.
+  const net = hazirDegerler + alacakToplam - borcToplam - personel.toplam;
   const yukleniyor = loading && kayitlar.length === 0;
   const tarih = longDateTR();
 
@@ -252,7 +272,13 @@ export default function GenelDurumPage() {
         <YazdirButonu dosyaAdi={`Finansal Durum Raporu - ${tarih}`} />
       </div>
 
-      <OzetSeridi hazirDegerler={hazirDegerler} alacak={alacakToplam} borc={borcToplam} net={net} />
+      <OzetSeridi
+        hazirDegerler={hazirDegerler}
+        alacak={alacakToplam}
+        borc={borcToplam}
+        personelBorcu={personel.toplam}
+        net={net}
+      />
 
       {yukleniyor ? (
         <div className="card">
@@ -289,7 +315,7 @@ export default function GenelDurumPage() {
             altBaslik="Tedarikçiler"
             sag={borclar.length > 0 ? { href: "/verecekler", sayi: borclar.length } : undefined}
           >
-            <BorcBolumu cariler={borclar} toplam={borcToplam} vadeliBorclar={vadeliBorclar} />
+            <BorcBolumu cariler={borclar} toplam={borcToplam} vadeliBorclar={vadeliBorclar} personel={personel} />
           </Bolum>
         </div>
       )}
@@ -339,29 +365,39 @@ export default function GenelDurumPage() {
 }
 
 // Dört kutu: hazır değerler, ticari alacaklar, ticari borçlar ve vurgulu net finansal durum.
+// Personel borcu ticari borçlardan ayrı durur ama net durumdan düşülür; izlenebilir olsun diye
+// Ticari Borçlar kutusunun altında ayrıca yazılır.
 function OzetSeridi({
   hazirDegerler,
   alacak,
   borc,
+  personelBorcu,
   net,
 }: {
   hazirDegerler: number;
   alacak: number;
   borc: number;
+  personelBorcu: number;
   net: number;
 }) {
   const artida = net >= 0;
   return (
     <div className="card overflow-hidden grid grid-cols-2 md:grid-cols-4 gap-px !bg-[var(--border)]">
       {[
-        { ad: "Hazır Değerler", tutar: hazirDegerler, aciklama: "Nakit + Banka + Kart / POS", renk: "" },
-        { ad: "Ticari Alacaklar", tutar: alacak, aciklama: "Müşterilerden tahsil edilecek", renk: "" },
-        { ad: "Ticari Borçlar", tutar: borc, aciklama: "Tedarikçilere ödenecek", renk: "" },
+        { ad: "Hazır Değerler", tutar: hazirDegerler, aciklama: "Nakit + Banka + Kart / POS", alt: "" },
+        { ad: "Ticari Alacaklar", tutar: alacak, aciklama: "Müşterilerden tahsil edilecek", alt: "" },
+        {
+          ad: "Ticari Borçlar",
+          tutar: borc,
+          aciklama: "Tedarikçilere ödenecek",
+          alt: personelBorcu > 0.005 ? `Personel borcu ayrı: ${formatTL(personelBorcu)}` : "",
+        },
       ].map((x) => (
         <div key={x.ad} className="px-5 py-4 bg-[var(--surface)]">
           <div className="text-[10.5px] font-medium uppercase tracking-[0.1em] text-[var(--muted)]">{x.ad}</div>
-          <div className={`tabular text-[19px] font-semibold mt-1 ${x.renk}`}>{formatTL(x.tutar)}</div>
+          <div className="tabular text-[19px] font-semibold mt-1">{formatTL(x.tutar)}</div>
           <div className="text-[11px] text-[var(--muted-soft)] mt-0.5">{x.aciklama}</div>
+          {x.alt && <div className="text-[11px] text-[var(--muted)] mt-0.5">{x.alt}</div>}
         </div>
       ))}
       <div
@@ -381,7 +417,9 @@ function OzetSeridi({
         >
           {formatTL(net)}
         </div>
-        <div className="text-[11px] text-[var(--muted)] mt-0.5">Hazır değerler + alacaklar − borçlar</div>
+        <div className="text-[11px] text-[var(--muted)] mt-0.5">
+          Hazır değerler + ticari alacaklar − ticari borçlar{personelBorcu > 0.005 ? " − personel borcu" : ""}
+        </div>
       </div>
     </div>
   );
@@ -664,9 +702,19 @@ function ArrowDownIcon() {
   );
 }
 
-// Tedarikçi bakiyeleri (devir bakiyeleri dahil) ve altında vade tarihli ödemeler. Aşama 4'ten sonra
-// buraya personel maaş borcu için ayrı bir satır eklenecek.
-function BorcBolumu({ cariler, toplam, vadeliBorclar }: { cariler: Cari[]; toplam: number; vadeliBorclar: KasaKaydi[] }) {
+// Tedarikçi bakiyeleri (devir bakiyeleri dahil), altında vade tarihli ödemeler ve personel maaş
+// borcu. Personel kalemi ticari borç sayılmadığı için Ticari Borçlar toplamına dahil edilmiyor.
+function BorcBolumu({
+  cariler,
+  toplam,
+  vadeliBorclar,
+  personel,
+}: {
+  cariler: Cari[];
+  toplam: number;
+  vadeliBorclar: KasaKaydi[];
+  personel: { toplam: number; satirlar: { calisan: Calisan; kalan: number }[] };
+}) {
   const gorunen = cariler.slice(0, LISTE_SINIRI);
   const kalanSayi = cariler.length - gorunen.length;
   const kalanTutar = toplam - gorunen.reduce((s, c) => s - c.bakiye, 0);
@@ -749,6 +797,50 @@ function BorcBolumu({ cariler, toplam, vadeliBorclar }: { cariler: Cari[]; topla
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="mt-5 pt-3 border-t border-[var(--border)]">
+        <div className="flex flex-wrap items-center justify-between gap-x-3">
+          <h3 className="rapor-bolum-baslik !text-[10.5px] text-[var(--muted)]">Personel</h3>
+          <span className="text-[11px] text-[var(--muted)]">Aktif personelin kalan maaş alacağı</span>
+        </div>
+        {personel.satirlar.length === 0 ? (
+          <p className="text-[12px] text-[var(--muted)] mt-1.5">Personele ödenmemiş maaş alacağı bulunmuyor.</p>
+        ) : (
+          <table className="rapor-tablo mt-1.5">
+            <thead>
+              <tr>
+                <th>Personel</th>
+                <th className="w-[140px]">Maaş</th>
+                <th className="sag w-[150px]">Kalan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {personel.satirlar.map(({ calisan, kalan }) => (
+                <tr key={calisan.id}>
+                  <td>
+                    <Link href={`/calisanlar/${calisan.id}`} className="font-medium hover:underline underline-offset-2">
+                      {calisan.adSoyad}
+                    </Link>
+                  </td>
+                  <td className="text-[var(--muted)]">
+                    {MAAS_TURU_LABEL[maasTuru(calisan)]}
+                    {calisan.maasTutari ? ` · ${formatTL(calisan.maasTutari)}` : ""}
+                  </td>
+                  <td className={`sag font-medium ${kalan < 0 ? "text-[var(--accent-green)]" : ""}`}>{formatTL(kalan)}</td>
+                </tr>
+              ))}
+              <tr className="toplam">
+                <td colSpan={2}>Toplam personel borcu · {personel.satirlar.length} personel</td>
+                <td className="sag">{formatTL(personel.toplam)}</td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+        <p className="text-[10.5px] text-[var(--muted-soft)] mt-1.5">
+          Personel borcu ticari borç sayılmadığı için Ticari Borçlar toplamına dahil edilmez; Net Finansal Durum&apos;dan ise
+          düşülür.
+        </p>
       </div>
     </>
   );

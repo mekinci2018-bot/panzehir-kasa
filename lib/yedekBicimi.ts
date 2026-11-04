@@ -10,7 +10,7 @@ export const GORSEL_KOLEKSIYONLARI = ["gorseller", "gorselOnizlemeleri"];
 export const SISTEM_KOLEKSIYONU = "sistem";
 
 // What the browser exports (it cannot list collections; the server backs up whatever exists).
-export const UYGULAMA_KOLEKSIYONLARI = ["kasaKayitlari", "bankaHesaplari", "calisanlar", "firmalar", "firmaAdlari", "siparisler"];
+export const UYGULAMA_KOLEKSIYONLARI = ["kasaKayitlari", "bankaHesaplari", "calisanlar", "personelHareketleri", "firmalar", "firmaAdlari", "siparisler"];
 
 export interface YedekDosyasi {
   uygulama: typeof YEDEK_UYGULAMA;

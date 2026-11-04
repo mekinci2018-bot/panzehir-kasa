@@ -152,13 +152,44 @@ export interface BankaHesabi {
   pasif?: boolean; // hidden from new transactions; history and balance stay visible
 }
 
+export type MaasTuru = "haftalik" | "aylik";
+
 export interface Calisan {
   id: string;
   adSoyad: string;
-  tcKimlikNo: string;
-  telefon: string;
-  adres: string;
-  acilDurumKisisi: string;
-  acilTelefon: string;
-  not: string;
+  maasTuru?: MaasTuru; // absent = "aylik"
+  maasTutari?: number; // per period (week or month), what the automatic accrual writes
+  mesaiSaatUcreti?: number; // overtime: hours × this rate
+  devredenAlacak?: number; // opening balance: what was already owed before the app
+  devredenTarihi?: string; // YYYY-MM-DD, the date that opening balance is as of; accruals start after it
+  pasif?: boolean; // hidden from the active list and the Personel total; history stays
+  // Removed in Aşama 4 (personal data we don't keep): tcKimlikNo, telefon, adres, acilDurumKisisi,
+  // acilTelefon, not. Still optional here so a record the cleanup script hasn't reached stays typed.
+  tcKimlikNo?: string;
+  telefon?: string;
+  adres?: string;
+  acilDurumKisisi?: string;
+  acilTelefon?: string;
+  not?: string;
+}
+
+// One line of an employee's payroll account. Payments are NOT here: they are Kasa records with
+// personelId (yon "giden"), so money moved from the till is counted once and a payment entered on
+// the Kasa page lands in the same statement. lib/personel.ts merges the two sources.
+export type PersonelHareketTuru = "hakedis" | "mesai" | "ek" | "kesinti";
+
+export interface PersonelHareketi {
+  id: string;
+  personelId: string;
+  tur: PersonelHareketTuru;
+  tarih: string; // YYYY-MM-DD
+  tutar: number; // always positive; the type decides the sign
+  aciklama?: string;
+  // Automatic accrual only: the period it covers ("h2026-11-02" = week starting Monday 02.11.2026,
+  // "a2026-11" = November 2026). The document id is `${personelId}_${donem}`, so the same period can
+  // never be written twice.
+  donem?: string;
+  saat?: number; // mesai: hours worked, when the amount came from hours × rate
+  createdAt: number;
+  updatedAt: number;
 }
