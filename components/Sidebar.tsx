@@ -32,7 +32,7 @@ const NAV = [
   { href: "/verecekler", label: "Borçlar", icon: ArrowUpFromLine },
   { href: "/arsiv", label: "Arşiv", icon: Archive },
   { href: "/banka-bilgileri", label: "Banka Hesapları", icon: Landmark },
-  { href: "/genel-durum", label: "Genel Durum", icon: Gauge },
+  { href: "/genel-durum", label: "Sipariş Durumu", icon: Gauge },
   { href: "/calisanlar", label: "Personel", icon: Users },
   { href: "/cop-kutusu", label: "Çöp Kutusu", icon: Trash2 },
   { href: "/ayarlar", label: "Ayarlar", icon: Settings },

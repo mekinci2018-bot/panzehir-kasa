@@ -1,6 +1,6 @@
 # Devam notları
 
-Son güncelleme: 06.11.2026 (Aşama 3 bitti; sıradaki tek iş Genel Durum'un sadeleşmesi)
+Son güncelleme: 06.11.2026 (Aşama 3 ve Genel Durum'un sadeleşmesi bitti; plandaki bütün aşamalar tamam)
 
 ## ⚠️ Ev bilgisayarına geçerken
 
@@ -9,6 +9,24 @@ Son güncelleme: 06.11.2026 (Aşama 3 bitti; sıradaki tek iş Genel Durum'un sa
 Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
 
 ## 06.11.2026'da yapılanlar (iş bilgisayarında)
+
+### Genel Durum sadeleşti: "Sipariş Durumu" (localhost'ta test edildi, onaylandı, commit edildi)
+
+Sayfanın eski bölümlerinin **tamamı kaldırıldı** — üstteki dört kutu, Hazır Değerler, Ticari Alacaklar (yaşlandırma dahil), Ticari Borçlar, Vadesi Yaklaşan Ödemeler ve Personel. Hepsi başka sayfalarda (Kasa, Alacaklar, Borçlar, Banka Hesapları, Personel) zaten görünüyordu. `app/genel-durum/page.tsx` 877 → 285 satır.
+
+Yerine iki bölüm geldi:
+
+- **Eldeki iş:** dört kutu, her biri adet + tutar ve tamamı tıklanabilir — Üretimde, "Bitti, teslim bekliyor", "Teslim edildi, parası alınmadı", "Bu ay alınan sipariş" (ay adıyla). Üçüncü kutuda tutar bilinçli olarak sipariş tutarı değil **tahsil edilmeyen kalan**; her kutunun altında hangi rakam olduğu küçük yazıyla duruyor. Adetler Siparişler'in kendi `sekmedeMi()` tanımından geliyor, yoksa kutudaki sayı ile açılan listenin sayısı birbirinden kayabilirdi.
+- **Aylık sipariş dökümü:** en yeni ay üstte — Ay / Yeni sipariş / Sipariş tutarı / Hâlâ üretimde (adet · tutar) / Teslim edildi (adet · tutar) / Tahsil edilen / Kalan alacak, en altta toplam satırı. Satıra tıklayınca Siparişler o ayla açılıyor. Grafik yok; mevcut `.rapor-tablo` stili.
+
+- **Siparişler sayfası artık `?ay=YYYY-MM&sekme=<sekme>` parametrelerini açılışta bir kez okuyor.** `useSearchParams` **kullanılmadı**: Next 16 dokümanına göre o kanca prerender edilen bu sayfanın tamamını en yakın Suspense sınırına kadar istemci tarafına çekiyor. Onun yerine `window.location.search` okunuyor, geçersiz değer yok sayılıyor (localStorage geri yüklemesindeki desenin aynısı).
+- Yazdır / PDF kaldı: başlık **"Sipariş Durumu"**, "… itibarıyla" + düzenlenme tarihi. Baskıda kutular 4'lü sırada; tablonun ekrandaki sabit genişliği baskıda kalkıyor, böylece A4'e sığıyor.
+- Menüdeki yeri değişmedi (Banka Hesapları'nın altında), **etiketi "Sipariş Durumu" oldu**; yol (`/genel-durum`) aynı kaldı.
+- Artık kullanılmayan kod da temizlendi: tahsilat kısayolu, yaşlandırma dilimleri, hazır değerler hesapları ve yalnızca o bölüm için yazılmış `lib/whatsapp.ts` → `firmaWaMesaji`.
+
+### Kasa'dan "Bugün aranacaklar" şeridi kaldırıldı
+
+Sürekli ekranda duruyordu ve gerek kalmadı. `components/BugunAranacaklar.tsx` silindi; Kasa sayfasındaki `aramaListesi` hesabı, ona bağlı `SiparisOdemeModal` ve `FirmaFormModal` ("telefon ekle") blokları ve kullanılmayan importlar da temizlendi. **WhatsApp butonu ve tahsilat notları yerinde:** `components/WhatsappButonu.tsx` ile `siparisWaMesaji()` Siparişler ve sipariş detayında, tahsilat notları da sipariş detayında çalışmaya devam ediyor.
 
 ### Aşama 3: Tahsilatların dağıtılması (localhost'ta test edildi, onaylandı, commit edildi)
 
@@ -146,11 +164,11 @@ Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayr
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
-**Sıra (06.11.2026 itibarıyla): Aşama 2, 2B, 3 ve 4 bitti.** Sıradaki **tek iş: Genel Durum'un sadeleşmesi.**
+**Durum (06.11.2026 akşamı): Aşama 2, 2B, 3, 4 ve Genel Durum'un sadeleşmesi bitti — plandaki bütün aşamalar tamam.** Sırada bekleyen bir aşama yok; geriye aşağıdaki "Bekleyen küçük işler" kaldı (client secret yenileme, PIN değiştirme, iki bilgisayardaki Firebase anahtar dosyası, Excel `.xlsx` yedeği).
 
-### Sıradaki iş — Genel Durum'un sadeleşmesi
+### Aşama 2B — Genel Durum · sonradan sadeleştirildi (06.11.2026)
 
-Sayfa şu anda çok kalabalık: dört özet kutusu, hazır değerler tablosu, yaşlandırma çubuğu, ilk-10 alacak ve borç tabloları, vadesi yaklaşan ödemeler alt tablosu ve personel tablosu bir arada. Hangi bölümlerin kalacağı, hangilerinin birleşeceği ya da kaldırılacağı bir sonraki oturumda kararlaştırılacak; karar verilmeden koda dokunulmayacak.
+04.11'de yazılan "Finansal Durum Raporu" bölümlerinin tamamı 06.11'de kaldırıldı; sayfa artık yalnızca sipariş durumunu gösteriyor. Ayrıntı yukarıda, "Genel Durum sadeleşti" bölümünde. Aşağıdaki 04.11 kaydı, o bölümlerin nasıl çalıştığını anlatan tarihsel not olarak duruyor (gerekirse geri getirmek için).
 
 ### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup · **BİTTİ** (04.11.2026, ev bilgisayarında yeniden yazıldı)
 

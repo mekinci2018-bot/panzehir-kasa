@@ -144,6 +144,18 @@ export default function SiparislerPage() {
     setDevredenAcikState(devredenAcikOku());
   }, []);
 
+  // Sipariş Durumu sayfasından gelen bağlantılar ay ve sekmeyi adres satırında taşıyor
+  // (/siparisler?ay=2026-11&sekme=uretimde). Bir kez, sayfa açılırken okunuyor; useSearchParams
+  // yerine window kullanılıyor, çünkü o kanca bu statik sayfanın tamamını istemci tarafına çekerdi.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const ayParam = p.get("ay");
+    const sekmeParam = p.get("sekme");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from the URL
+    if (ayParam && /^\d{4}-\d{2}$/.test(ayParam)) setAy(ayParam);
+    if (sekmeParam && SEKMELER.includes(sekmeParam as SiparisSekmesi)) setSekmeState(sekmeParam as SiparisSekmesi);
+  }, []);
+
   function setSekme(s: SiparisSekmesi) {
     setSekmeState(s);
     setLimit(SAYFA);
