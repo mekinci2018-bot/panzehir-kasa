@@ -20,7 +20,16 @@ import AyKasaOzeti from "@/components/AyKasaOzeti";
 import { SiraCubugu } from "@/components/SiraBasligi";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 import { aylikKasa } from "@/lib/donem";
-import { kartOnerileri, useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import {
+  kartOnerileri,
+  useBankaHesaplari,
+  useCalisanlar,
+  useFirmalar,
+  useKasaKayitlari,
+  usePersonelHareketleri,
+  useSiparisler,
+} from "@/lib/hooks";
+import { personelBorcuToplami } from "@/lib/personel";
 import { firmaSiparisOzetleri, siparisHesap, siparisOdemeleri } from "@/lib/siparis";
 import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
@@ -69,6 +78,7 @@ export default function KasaPage() {
   const { hesaplar } = useBankaHesaplari();
   const { firmalar } = useFirmalar();
   const { calisanlar } = useCalisanlar();
+  const { hareketler: personelHareketleri } = usePersonelHareketleri();
   const { siparisler } = useSiparisler();
   const [drafts, setDrafts] = useState<DraftSlot[]>(() => Array.from({ length: DRAFT_COUNT }, () => newSlot()));
   const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit } | null>(null);
@@ -92,6 +102,12 @@ export default function KasaPage() {
   const ozetler = useMemo(() => cariOzetleri(kayitlar, "firmaId", siparisler, odemeler), [kayitlar, siparisler, odemeler]);
   const siparisOzetleri = useMemo(() => firmaSiparisOzetleri(siparisler, odemeler), [siparisler, odemeler]);
   const personelOzetleri = useMemo(() => cariOzetleri(kayitlar, "personelId"), [kayitlar]);
+  // Aktif personelin kalan maaş alacağı. Ödenecek Borç'tan ayrı duruyor: ticari borç değil, ama
+  // gerçek bir yükümlülük (Genel Durum'da da öyle sayılıyor).
+  const personelBorcu = useMemo(
+    () => personelBorcuToplami(calisanlar, personelHareketleri, kayitlar).toplam,
+    [calisanlar, personelHareketleri, kayitlar]
+  );
 
   // Customers and suppliers show their balance; expense items and staff only what was spent.
   function cariOzetMetni(d: DraftKayit): string | undefined {
@@ -298,6 +314,12 @@ export default function KasaPage() {
             value: formatTL(stats.toplamBorc),
             hint: "Tedarikçilere ödenecek toplam",
             tone: "red",
+          },
+          {
+            title: "Personel Borcu",
+            value: formatTL(personelBorcu),
+            hint: "Aktif personelin kalan maaş alacağı; Ödenecek Borç'a dahil değil",
+            tone: "slate",
           },
         ]}
       />

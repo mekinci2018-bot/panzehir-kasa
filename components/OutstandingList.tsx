@@ -50,9 +50,16 @@ interface Grup {
   toplam: number;
   ilkTarih: string;
   enYakinVade?: string;
+  enEski: AcikKalem; // tarihi en eski kalem: grup satırındaki tahsilat / ödeme kısayolu buna açılır
+  gecikmis: boolean;
 }
 
 const OVERDUE_DAYS = 30;
+
+// Grup kapalıyken içindeki gecikme gizlenmesin: vadesi geçmiş, ya da vadesi olmayıp 30 günü aşmış kalem.
+function gecikmisMi(k: AcikKalem): boolean {
+  return k.vade ? vadeDurumu(k.vade) === "gecti" : daysSince(k.tarih) > OVERDUE_DAYS;
+}
 
 const KALEM_SUTUNLARI: SiraSutunlari<AcikKalem> = {
   tarih: (k) => k.tarih,
@@ -168,13 +175,25 @@ export default function OutstandingList({
       const key = k.firmaId ?? (k.personelId ? `p-${k.personelId}` : `ad-${k.firma}`);
       let g = map.get(key);
       if (!g) {
-        g = { key, ad: k.firma, firmaId: k.firmaId, personelId: k.personelId, kalemler: [], toplam: 0, ilkTarih: k.tarih };
+        g = {
+          key,
+          ad: k.firma,
+          firmaId: k.firmaId,
+          personelId: k.personelId,
+          kalemler: [],
+          toplam: 0,
+          ilkTarih: k.tarih,
+          enEski: k,
+          gecikmis: false,
+        };
         map.set(key, g);
       }
       g.kalemler.push(k);
       g.toplam += k.kalan;
       if (k.tarih < g.ilkTarih) g.ilkTarih = k.tarih;
+      if (k.tarih < g.enEski.tarih) g.enEski = k;
       if (k.vade && (!g.enYakinVade || k.vade < g.enYakinVade)) g.enYakinVade = k.vade;
+      if (gecikmisMi(k)) g.gecikmis = true;
     }
     return [...map.values()];
   }, [gorunen]);
@@ -197,6 +216,32 @@ export default function OutstandingList({
 
   function grupAcKapa(key: string) {
     setAcikGruplar((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  // Grup satırının açıklaması: Borçlar'da belge türü dökümü ("7 senet · 2 çek"), Alacaklar'da
+  // sipariş / diğer kalem dökümü ("5 sipariş · 1 kalem").
+  function grupOzeti(g: Grup): string {
+    if (yon === "giden") return belgeOzeti(g.kalemler.map((k) => k.aciklama));
+    const siparis = g.kalemler.filter((k) => k.siparis).length;
+    const diger = g.kalemler.length - siparis;
+    return [siparis ? `${siparis} sipariş` : "", diger ? `${diger} kalem` : ""].filter(Boolean).join(" · ");
+  }
+
+  // Firma satırındaki kısayol: en eski açık kalemin penceresini açar. Aşama 3'te yerini, tutarı
+  // bütün açık siparişlere eskiden yeniye dağıtan pencere alacak.
+  function GrupButonu({ g, kucuk = false }: { g: Grup; kucuk?: boolean }) {
+    return (
+      <button
+        className={`btn-primary ${kucuk ? "!py-1 !px-2.5 !text-[11px]" : "!py-1.5 !px-3 !text-xs"} whitespace-nowrap`}
+        title={`En eski açık kalem · ${formatDate(g.enEski.tarih)}${g.enEski.aciklama ? " · " + g.enEski.aciklama : ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          odemeAc(g.enEski);
+        }}
+      >
+        {actionLabel}
+      </button>
+    );
   }
 
   // Vade tarihli kalemlerde (çek / senet) tek tıkla "Ödendi olarak işaretle": kalan tutar hazır gelir,
@@ -338,10 +383,14 @@ export default function OutstandingList({
                   const acik = tekKalem || acikGruplar.includes(g.key);
                   return (
                     <div key={g.key} className="card p-3 flex flex-col gap-2">
-                      <button
-                        type="button"
+                      <div
+                        role={tekKalem ? undefined : "button"}
+                        tabIndex={tekKalem ? undefined : 0}
                         className="flex items-start justify-between gap-3 text-left"
                         onClick={() => !tekKalem && grupAcKapa(g.key)}
+                        onKeyDown={(e) =>
+                          !tekKalem && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), grupAcKapa(g.key))
+                        }
                       >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -351,14 +400,22 @@ export default function OutstandingList({
                               />
                             )}
                             <FirmaLink firmaId={g.firmaId} personelId={g.personelId} ad={g.ad} className="font-medium" />
+                            {!tekKalem && g.gecikmis && (
+                              <span className="badge badge-overdue">
+                                <AlertTriangle className="w-3 h-3" /> Gecikmiş
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-[var(--muted)] mt-0.5">
-                            {belgeOzeti(g.kalemler.map((k) => k.aciklama))}
+                            {grupOzeti(g)}
                             {g.enYakinVade ? ` · en yakın vade ${formatDate(g.enYakinVade)}` : ""}
                           </div>
                         </div>
-                        <div className="tabular font-semibold text-sm shrink-0">{formatTL(g.toplam)}</div>
-                      </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="tabular font-semibold text-sm">{formatTL(g.toplam)}</div>
+                          {!tekKalem && <GrupButonu g={g} kucuk />}
+                        </div>
+                      </div>
                       {acik && (
                         <ul className="flex flex-col divide-y divide-[var(--border)] border-t border-[var(--border)]">
                           {g.kalemler.map((k) => {
@@ -477,14 +534,23 @@ export default function OutstandingList({
                                 />
                                 <FirmaLink firmaId={g.firmaId} personelId={g.personelId} ad={g.ad} />
                                 <span className="badge bg-[#f1f1f4] text-[var(--muted)]">{g.kalemler.length} kalem</span>
+                                {g.gecikmis && (
+                                  <span className="badge badge-overdue">
+                                    <AlertTriangle className="w-3 h-3" /> Gecikmiş
+                                  </span>
+                                )}
                               </div>
                             </td>
-                            <td className="text-[var(--muted)]">{belgeOzeti(g.kalemler.map((k) => k.aciklama))}</td>
+                            <td className="text-[var(--muted)]">{grupOzeti(g)}</td>
                             <td>
                               <VadeHucresi vade={g.enYakinVade} />
                             </td>
                             <td className="num font-semibold">{formatTL(g.toplam)}</td>
-                            <td />
+                            <td>
+                              <div className="flex gap-2 justify-end">
+                                <GrupButonu g={g} />
+                              </div>
+                            </td>
                           </tr>,
                         ];
                         if (acik) {

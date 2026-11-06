@@ -1,4 +1,4 @@
-type Tone = "green" | "blue" | "orange" | "red" | "violet";
+type Tone = "green" | "blue" | "orange" | "red" | "violet" | "slate";
 
 const DOT: Record<Tone, string> = {
   green: "bg-[var(--accent-green)]",
@@ -6,6 +6,7 @@ const DOT: Record<Tone, string> = {
   orange: "bg-[var(--accent-orange)]",
   red: "bg-[var(--accent-red)]",
   violet: "bg-[var(--accent-violet)]",
+  slate: "bg-[var(--muted)]", // personel borcu gibi, ticari olmayan kalemler
 };
 
 export interface StatItem {
@@ -16,10 +17,21 @@ export interface StatItem {
   vurgulu?: boolean; // the headline figure: dark, larger
 }
 
+// Geniş ekranda bütün kutular tek sırada dursun: kolon sayısı kutu sayısını izliyor (Tailwind
+// sınıfın yazılı olmasını istediği için eşleme tablosu).
+const XL_KOLON: Record<number, string> = {
+  4: "xl:grid-cols-4",
+  5: "xl:grid-cols-5",
+  6: "xl:grid-cols-6",
+  7: "xl:grid-cols-7",
+};
+
 // Cells sit on a 1px gap over the border colour, so dividers work for any item count.
 export default function StatStrip({ items }: { items: StatItem[] }) {
   return (
-    <div className="card overflow-hidden grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-px !bg-[var(--border)]">
+    <div
+      className={`card overflow-hidden grid grid-cols-2 md:grid-cols-3 ${XL_KOLON[items.length] ?? "xl:grid-cols-6"} gap-px !bg-[var(--border)]`}
+    >
       {items.map((s) =>
         s.vurgulu ? (
           <div key={s.title} className="px-4 py-3 bg-[var(--ink)] text-white col-span-2 md:col-span-1" title={s.hint}>

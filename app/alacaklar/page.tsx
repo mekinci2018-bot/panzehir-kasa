@@ -13,6 +13,7 @@ export default function AlacaklarPage() {
       actionLabel="Ödeme Al"
       newLabel="Yeni Alacak"
       icon={ArrowDownToLine}
+      gruplu
       emptyTitle="Henüz alacak yok"
       emptyDescription="'Yeni Alacak' ile ekleyebilir ya da Kasa'da peşin alınmayan bir 'Giriş' girebilirsin."
     />
