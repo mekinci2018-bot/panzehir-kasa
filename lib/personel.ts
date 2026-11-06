@@ -5,7 +5,7 @@
 // **Tek kaynak kuralı:** ödemeler `personelHareketleri` koleksiyonunda tutulmaz; personele yapılan
 // her ödeme `personelId` taşıyan bir Kasa kaydıdır (yon "giden"). Böylece hem Personel sayfasından
 // hem Kasa'dan yapılan ödeme aynı ekstreye düşer ve para iki kez sayılmaz.
-import { formatDate, monthLabel } from "./format";
+import { formatDate, monthLabel, shiftMonthKey } from "./format";
 import { hareketlerOf } from "./hareketler";
 import { mahsupEtiketi, sayilan } from "./kayit";
 import type { Calisan, KasaKaydi, MaasTuru, PersonelHareketi, PersonelHareketTuru } from "./types";
@@ -71,44 +71,70 @@ function gunEkle(iso: string, gun: number): string {
 }
 
 // Geçmişe dönük tamamlama sınırı: devreden tarihi çok eskiyse yüzlerce satır üretilmesin.
+// **Sınır bugünden geriye sayılır**; bugünün dönemi her zaman üretilir. Eskiden sınır başlangıç
+// tarihinden sayılıyordu, bu yüzden devreden tarihi 26 haftadan / 12 aydan eskiyse bugünün dönemi
+// hiç üretilmiyor, personel kalıcı olarak "bu hafta işlenmedi" görünüyordu.
 const EN_FAZLA_HAFTA = 26;
 const EN_FAZLA_AY = 12;
 
-// Bugüne kadar başlamış, henüz yazılmamış hak ediş dönemleri. Başlangıç noktası devreden tarihi;
-// yoksa bugünün dönemi (geçmişe dönük tamamlama yapılmaz, çünkü ne zamandan beri çalıştığı bilinmiyor).
-export function eksikDonemler(c: Calisan, hareketler: PersonelHareketi[], bugun: string): string[] {
-  if (c.pasif || !c.maasTutari || c.maasTutari <= 0) return [];
-  const tur = maasTuru(c);
-  const varOlan = new Set(hareketler.filter((h) => h.personelId === c.id && h.donem).map((h) => h.donem!));
+function devredenTarihiOf(c: Calisan): string | undefined {
+  return c.devredenTarihi?.trim() ? c.devredenTarihi : undefined;
+}
 
-  const baslangic = c.devredenTarihi && c.devredenTarihi <= bugun ? c.devredenTarihi : bugun;
+// Hak edişi yazılması gereken dönemler, eskiden yeniye. Başlangıç devreden tarihi; yoksa yalnızca
+// bugünün dönemi (ne zamandan beri çalıştığı bilinmediği için geriye dönük tamamlama yapılmaz).
+// Devreden tarihi bir dönemin ortasındaysa o dönem devredene dahil sayılır ve yazılmaz.
+export function uretilecekDonemler(c: Calisan, bugun: string): string[] {
+  if (c.pasif || !c.maasTutari || c.maasTutari <= 0) return [];
+  const devreden = devredenTarihiOf(c);
+  // Devreden tarihi ileriye dönükse hak ediş henüz başlamamıştır.
+  if (devreden && devreden > bugun) return [];
+
   const donemler: string[] = [];
-  if (tur === "haftalik") {
-    let gun = pazartesiOf(baslangic);
-    // Devreden tarihi hafta ortasındaysa o hafta zaten devredene dahil sayılır; sonraki haftadan başla.
-    if (c.devredenTarihi && gun < c.devredenTarihi) gun = gunEkle(gun, 7);
-    for (let i = 0; i < EN_FAZLA_HAFTA && gun <= bugun; i++) {
+  if (maasTuru(c) === "haftalik") {
+    let ilk = pazartesiOf(devreden ?? bugun);
+    if (devreden && ilk < devreden) ilk = gunEkle(ilk, 7);
+    for (let gun = pazartesiOf(bugun), i = 0; i < EN_FAZLA_HAFTA && gun >= ilk; i++, gun = gunEkle(gun, -7)) {
       donemler.push(`h${gun}`);
-      gun = gunEkle(gun, 7);
     }
   } else {
-    const [y0, m0] = baslangic.split("-").map(Number);
-    // Devreden tarihi ayın 1'i değilse o ay devredene dahil; sonraki aydan başla.
-    const ilk = c.devredenTarihi && c.devredenTarihi.slice(-2) !== "01" ? 1 : 0;
-    for (let i = ilk; i < EN_FAZLA_AY + ilk; i++) {
-      const d = new Date(y0, m0 - 1 + i, 1);
-      const ay = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (`${ay}-01` > bugun) break;
+    let ilkAy = (devreden ?? bugun).slice(0, 7);
+    if (devreden && !devreden.endsWith("-01")) ilkAy = shiftMonthKey(ilkAy, 1);
+    for (let ay = bugun.slice(0, 7), i = 0; i < EN_FAZLA_AY && ay >= ilkAy; i++, ay = shiftMonthKey(ay, -1)) {
       donemler.push(`a${ay}`);
     }
   }
-  return donemler.filter((d) => !varOlan.has(d));
+  return donemler.reverse();
 }
 
-// Bu dönem işlendi mi? (Personel kartında "Bu hafta / bu ay işlendi" bilgisi için.)
-export function buDonemIslendi(c: Calisan, hareketler: PersonelHareketi[], bugun: string): boolean {
+// Üretilmesi gerekenlerden henüz yazılmamış olanlar.
+export function eksikDonemler(c: Calisan, hareketler: PersonelHareketi[], bugun: string): string[] {
+  const varOlan = new Set(hareketler.filter((h) => h.personelId === c.id && h.donem).map((h) => h.donem!));
+  return uretilecekDonemler(c, bugun).filter((d) => !varOlan.has(d));
+}
+
+export type HakEdisDurum = "islendi" | "devredene-dahil" | "eksik" | "yok";
+
+// Bu dönemin durumu. Hep `uretilecekDonemler`e bakar, bu yüzden ekranda yazan ile yazılacak hak
+// ediş birbirinden kopamaz:
+//   islendi         — bu dönemin hak edişi yazılı
+//   devredene-dahil — devreden tarihi bu dönemin içinde, maaşı devreden alacağın içinde sayılıyor
+//   eksik           — yazılması gerekiyor ("şimdi işle" gerçekten bir şey yazar)
+//   yok             — pasif ya da maaş tutarı girilmemiş
+//
+// Eskiden burada yalnızca "bu dönemin kaydı var mı?" sorulduğu için devredene dahil dönemler
+// "işlenmedi" görünüyor, "şimdi işle" düğmesi de sessizce hiçbir şey yapmıyordu.
+export function hakEdisDurumu(
+  c: Calisan,
+  hareketler: PersonelHareketi[],
+  bugun: string
+): { durum: HakEdisDurum; eksik: number } {
+  if (c.pasif || !c.maasTutari || c.maasTutari <= 0) return { durum: "yok", eksik: 0 };
   const donem = donemKimligi(maasTuru(c), bugun);
-  return hareketler.some((h) => h.personelId === c.id && h.donem === donem);
+  const eksikler = eksikDonemler(c, hareketler, bugun);
+  if (eksikler.includes(donem)) return { durum: "eksik", eksik: eksikler.length };
+  const yazili = hareketler.some((h) => h.personelId === c.id && h.donem === donem);
+  return { durum: yazili ? "islendi" : "devredene-dahil", eksik: eksikler.length };
 }
 
 // ---- Ekstre ----

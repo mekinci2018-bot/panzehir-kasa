@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Users, Plus, Clock, Wallet, Check, AlertTriangle, Pencil, EyeOff, RotateCcw, Trash2 } from "lucide-react";
 import { useBankaHesaplari, useCalisanlar, useKasaKayitlari, usePersonelHareketleri } from "@/lib/hooks";
-import { personelOzeti, buDonemIslendi, maasTuru, MAAS_TURU_LABEL, eksikDonemler, donemBasi } from "@/lib/personel";
+import { personelOzeti, hakEdisDurumu, maasTuru, MAAS_TURU_LABEL, eksikDonemler, donemBasi, type HakEdisDurum } from "@/lib/personel";
 import { deleteCalisan, hakEdisYaz, personelOdemeYap, updateCalisan } from "@/lib/db";
 import { formatDate, formatTL, todayISO } from "@/lib/format";
 import type { Calisan } from "@/lib/types";
@@ -103,8 +103,8 @@ export default function CalisanlarPage() {
                 key={c.id}
                 calisan={c}
                 ozet={ozetler.get(c.id)!}
-                islendi={buDonemIslendi(c, hareketler, bugun)}
-                eksikDonem={eksikDonemler(c, hareketler, bugun).length}
+                durum={hakEdisDurumu(c, hareketler, bugun).durum}
+                eksikDonem={hakEdisDurumu(c, hareketler, bugun).eksik}
                 silinebilir={silinebilirMi(c)}
                 onDuzenle={() => setDuzenlenen(c)}
                 onMesai={() => setMesaiFor(c)}
@@ -125,7 +125,7 @@ export default function CalisanlarPage() {
                     key={c.id}
                     calisan={c}
                     ozet={ozetler.get(c.id)!}
-                    islendi
+                    durum="yok"
                     eksikDonem={0}
                     silinebilir={silinebilirMi(c)}
                     onDuzenle={() => setDuzenlenen(c)}
@@ -180,7 +180,7 @@ export default function CalisanlarPage() {
 function PersonelKarti({
   calisan,
   ozet,
-  islendi,
+  durum,
   eksikDonem,
   silinebilir,
   onDuzenle,
@@ -192,7 +192,7 @@ function PersonelKarti({
 }: {
   calisan: Calisan;
   ozet: { kalan: number; sonOdemeTarihi?: string; sonOdemeTutari?: number };
-  islendi: boolean;
+  durum: HakEdisDurum;
   eksikDonem: number;
   silinebilir: boolean;
   onDuzenle: () => void;
@@ -247,17 +247,21 @@ function PersonelKarti({
         ) : (
           <span>Henüz ödeme yapılmadı</span>
         )}
-        {!calisan.pasif && calisan.maasTutari ? (
-          islendi ? (
-            <span className="inline-flex items-center gap-1 text-[var(--accent-green)]">
-              <Check className="w-3.5 h-3.5" /> {donemAdi} işlendi
-            </span>
-          ) : (
-            <button className="inline-flex items-center gap-1 text-[var(--accent-orange)] font-medium hover:underline" onClick={onEksikleriIsle}>
-              <AlertTriangle className="w-3.5 h-3.5" /> {donemAdi} işlenmedi
-              {eksikDonem > 1 ? ` (${eksikDonem} dönem)` : ""} · şimdi işle
-            </button>
-          )
+        {/* Uyarı yalnızca gerçekten yazılacak bir dönem varsa gösteriliyor; "devredene dahil"
+            dönemlerde eskiden kalıcı "işlenmedi" yazıyor, düğme de hiçbir şey yapmıyordu. */}
+        {eksikDonem > 0 ? (
+          <button className="inline-flex items-center gap-1 text-[var(--accent-orange)] font-medium hover:underline" onClick={onEksikleriIsle}>
+            <AlertTriangle className="w-3.5 h-3.5" /> {donemAdi} işlenmedi
+            {eksikDonem > 1 ? ` (${eksikDonem} dönem)` : ""} · şimdi işle
+          </button>
+        ) : durum === "islendi" ? (
+          <span className="inline-flex items-center gap-1 text-[var(--accent-green)]">
+            <Check className="w-3.5 h-3.5" /> {donemAdi} işlendi
+          </span>
+        ) : durum === "devredene-dahil" ? (
+          <span className="text-[var(--muted-soft)]" title="Devreden alacak bu dönemin içinde girildiği için maaşı ayrıca yazılmıyor">
+            {donemAdi} devredene dahil
+          </span>
         ) : null}
       </div>
 
