@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaGeriYukle, kayitGeriYukle, odemeSatiriGeriYukle, siparisGeriYukle } from "@/lib/db";
-import { KAYIT_TURU_LABEL, sayilan } from "@/lib/kayit";
+import { KAYIT_TURU_LABEL, kayitTutari, sayilan } from "@/lib/kayit";
 import type { KasaKaydi, Odeme } from "@/lib/types";
 import { FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
@@ -98,7 +98,7 @@ export default function CopKutusuPage() {
                 ? "komisyon gideriyle birlikte"
                 : ""
               : [ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli, k.kartAciklama].filter(Boolean).join(" · "),
-            tutar: k.tur === "mahsup" ? sayilan(k) : k.toplamTutar,
+            tutar: k.tur === "mahsup" ? sayilan(k) : kayitTutari(k),
             silinmeTarihi: k.silinmeTarihi ?? 0,
             geriYukle: () => kayitGeriYukle(k.id, komisyonIds),
           };

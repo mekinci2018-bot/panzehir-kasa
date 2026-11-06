@@ -1,5 +1,5 @@
 import { daysSince } from "./format";
-import type { KasaKaydi, Siparis, UretimDurumu } from "./types";
+import type { Siparis, UretimDurumu } from "./types";
 
 export const URETIM_SIRASI: UretimDurumu[] = ["bekliyor", "uretimde", "bitti", "teslim"];
 
@@ -14,16 +14,9 @@ export function sonrakiUretim(d: UretimDurumu): UretimDurumu {
   return URETIM_SIRASI[(URETIM_SIRASI.indexOf(d) + 1) % URETIM_SIRASI.length];
 }
 
-// Money taken on each order through Kasa ("Ödeme Al"), by siparisId. Deleted records are already
-// filtered out by useKasaKayitlari, so a payment in Çöp Kutusu stops counting.
-export function siparisOdemeleri(kayitlar: KasaKaydi[]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const k of kayitlar) {
-    if (!k.siparisId) continue;
-    map.set(k.siparisId, (map.get(k.siparisId) ?? 0) + (k.yon === "gelen" ? k.alinanTutar : -k.alinanTutar));
-  }
-  return map;
-}
+// Siparişe düşen para lib/dagitim.ts'teki siparisOdemeleri() ile okunur: bir tahsilat `dagitim`
+// taşıyorsa katkı yalnızca ondan gelir, taşımıyorsa eski `siparisId` yolundan (tek kaynak kuralı).
+// Burada tutulamaz, çünkü dağıtım planı siparisHesap()'a ihtiyaç duyuyor (döngüsel import olurdu).
 
 export interface SiparisHesap {
   odenen: number;

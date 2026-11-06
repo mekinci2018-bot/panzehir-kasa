@@ -24,7 +24,17 @@ export interface Odeme {
 // All three are saved with alinanTutar = toplamTutar and durum "tamamlandi", so every generic
 // "open amount" filter (Alacaklar, Borçlar, Kasa totals) leaves them alone; what they really do
 // lives in lib/kayit.ts (cariEtkileri) and lib/hareketler.ts (hareketlerOf).
-export type KayitTuru = "transfer" | "mahsup" | "mahsup-komisyon";
+export type KayitTuru = "transfer" | "mahsup" | "mahsup-komisyon" | "tahsilat";
+
+// Aşama 3: tahsil edilen paranın hangi açık kaleme ne kadar düştüğü. Hedef bir sipariş ya da bir
+// kasa kaydı (devir bakiyesi, veresiye) olabilir. Toplamı alınan tutardan küçükse farkı avanstır.
+export type HedefTur = "siparis" | "kayit";
+
+export interface DagitimKalemi {
+  hedefTur: HedefTur;
+  id: string;
+  tutar: number;
+}
 
 export interface KasaKaydi {
   id: string;
@@ -35,8 +45,12 @@ export interface KasaKaydi {
   firmaId?: string; // link to firmalar; absent on older free-text records until matched
   personelId?: string; // set instead of firmaId when the counterparty is an employee (calisanlar)
   // A payment taken with "Ödeme Al" on an order: toplamTutar = alinanTutar = the payment, so it
-  // never adds a debt of its own; the order carries the amount owed.
+  // never adds a debt of its own; the order carries the amount owed. Bir tahsilat `dagitim`
+  // taşıyorsa bu alan yalnızca "nereden başlatıldı" bilgisidir, para ondan sayılmaz (lib/dagitim.ts).
   siparisId?: string;
+  // Tahsil edilen paranın açık kalemlere dağılımı (Aşama 3). Taşıyan kayıtta siparişe katkı
+  // yalnızca buradan okunur; dağıtılmayan kısım avanstır.
+  dagitim?: DagitimKalemi[];
   aciklama: string;
   toplamTutar: number;
   alinanTutar: number;

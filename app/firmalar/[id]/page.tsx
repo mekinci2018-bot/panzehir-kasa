@@ -8,7 +8,7 @@ import { YazdirButonu, YazdirmaBasligi } from "@/components/Yazdir";
 import FirmaIslemMenu from "@/components/FirmaIslemMenu";
 import FirmaFormModal from "@/components/FirmaFormModal";
 import { useBankaHesaplari, useFirmalar, useKasaKayitlari, useSiparisler, kartOnerileri } from "@/lib/hooks";
-import { siparisOdemeleri } from "@/lib/siparis";
+import { siparisOdemeSatirlari, siparisOdemeleri } from "@/lib/dagitim";
 import SiparisDetayModal from "@/components/SiparisDetayModal";
 import { ekstreOlustur, FIRMA_TURU_LABEL, firmaTuru, type EkstreSatiri } from "@/lib/firma";
 import { kayitFirmayaAitMi } from "@/lib/kayit";
@@ -369,7 +369,7 @@ export default function CariEkstrePage() {
         <SiparisDetayModal
           key={siparisDetay.id}
           siparis={siparisDetay}
-          odemeKayitlari={kayitlar.filter((k) => k.siparisId === siparisDetay.id)}
+          odemeSatirlari={siparisOdemeSatirlari(siparisDetay.id, kayitlar)}
           odemeler={odemeler}
           hesaplar={hesaplar}
           kartOnerileri={kartOnerileri(kayitlar)}

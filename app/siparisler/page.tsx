@@ -27,11 +27,11 @@ import {
   odemeDurumu,
   sekmedeMi,
   siparisHesap,
-  siparisOdemeleri,
   tahsilatUyari,
   type SiparisHesap,
   type SiparisSekmesi,
 } from "@/lib/siparis";
+import { firmaAvansi, siparisOdemeSatirlari, siparisOdemeleri } from "@/lib/dagitim";
 import { sirala, useSiralama, type SiraSutunlari } from "@/lib/siralama";
 import { currentMonthKey, formatDate, formatTL, monthLabel, todayISO, tutarOku } from "@/lib/format";
 import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
@@ -309,9 +309,18 @@ export default function SiparislerPage() {
           aciklama: t.aciklama.trim(),
           odemeGunu: t.odemeGunu || undefined,
         },
-        odenen > 0 ? { tutar: odenen, ...t.odeme } : undefined
+        odenen > 0 ? { tutar: odenen, ...t.odeme } : undefined,
+        kayitlar
       );
-      bildir(odenen > 0 ? "Sipariş kaydedildi · ödeme Kasa'ya işlendi" : "Sipariş kaydedildi");
+      // Firmanın avansı varsa bu siparişe kendiliğinden düştü; ne olduğu söyleniyor.
+      const avansDusen = Math.min(Number(t.tutar) || 0, firmaAvansi(t.firmaId, kayitlar));
+      bildir(
+        avansDusen > 0
+          ? `Sipariş kaydedildi · ${formatTL(avansDusen)} avans bu siparişe düştü`
+          : odenen > 0
+            ? "Sipariş kaydedildi · ödeme Kasa'ya işlendi"
+            : "Sipariş kaydedildi"
+      );
       await gorselleriYukle(ref.id, "siparis", t.siparisGorselleri);
       await gorselleriYukle(ref.id, "biten", t.bitenGorselleri);
     } catch (err) {
@@ -582,7 +591,7 @@ export default function SiparislerPage() {
         <SiparisDetayModal
           key={detay.id}
           siparis={detay}
-          odemeKayitlari={kayitlar.filter((k) => k.siparisId === detay.id)}
+          odemeSatirlari={siparisOdemeSatirlari(detay.id, kayitlar)}
           odemeler={odemeler}
           hesaplar={hesaplar}
           kartOnerileri={oneriler}
@@ -1094,21 +1103,27 @@ function SiparisKarti({
 function MobilYeniSiparis({ firmalar, onClose, onSaved }: { firmalar: Firma[]; onClose: () => void; onSaved: () => void }) {
   const [t, setT] = useState(bosTaslak);
   const [busy, setBusy] = useState(false);
+  // Avansın yeni siparişe düşmesi için firmanın kayıtları gerekiyor (paylaşılan dinleyici).
+  const { kayitlar } = useKasaKayitlari();
 
   async function kaydet(e: React.FormEvent) {
     e.preventDefault();
     if (!t.firmaId || busy) return;
     setBusy(true);
     try {
-      await addSiparis({
-        firmaId: t.firmaId,
-        firmaAdi: t.firma,
-        tarih: t.tarih,
-        urun: t.urun.trim(),
-        tutar: Number(t.tutar) || 0,
-        aciklama: t.aciklama.trim(),
-        odemeGunu: t.odemeGunu || undefined,
-      });
+      await addSiparis(
+        {
+          firmaId: t.firmaId,
+          firmaAdi: t.firma,
+          tarih: t.tarih,
+          urun: t.urun.trim(),
+          tutar: Number(t.tutar) || 0,
+          aciklama: t.aciklama.trim(),
+          odemeGunu: t.odemeGunu || undefined,
+        },
+        undefined,
+        kayitlar
+      );
       onSaved();
     } catch (err) {
       console.error(err);

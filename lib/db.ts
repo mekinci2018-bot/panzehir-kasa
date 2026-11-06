@@ -16,7 +16,21 @@ import {
 import { getDb, ensureSignedIn } from "./firebase";
 import { monthKeyOf, todayISO } from "./format";
 import { firmaAdiDuzenle, firmaAnahtari } from "./firma";
-import type { Ayarlar, BankaHesabi, Calisan, Firma, FirmaTuru, GorselAlani, KasaKaydi, Odeme, PersonelHareketi, Siparis, TahsilatNotu } from "./types";
+import { avansDusumleri } from "./dagitim";
+import type {
+  Ayarlar,
+  BankaHesabi,
+  Calisan,
+  DagitimKalemi,
+  Firma,
+  FirmaTuru,
+  GorselAlani,
+  KasaKaydi,
+  Odeme,
+  PersonelHareketi,
+  Siparis,
+  TahsilatNotu,
+} from "./types";
 
 // App-wide preferences, shared by everyone using the account (sistem/ayarlar).
 export async function ayarGuncelle(patch: Partial<Ayarlar>) {
@@ -479,7 +493,10 @@ const SIPARIS_NO_BASLANGIC = 1000; // first order created becomes 1001
 
 export async function addSiparis(
   input: Pick<Siparis, "firmaId" | "firmaAdi" | "tarih" | "urun" | "tutar" | "aciklama"> & { odemeGunu?: string },
-  pesin?: OdemeGirdisi
+  pesin?: OdemeGirdisi,
+  // Firmanın kayıtları: varsa avansı bu yeni siparişe düşürülür (aynı işlemde, sipariş yazılıp
+  // avans yazılmadan kalmasın diye).
+  avansKayitlari: KasaKaydi[] = []
 ) {
   await ensureSignedIn();
   const ref = doc(collection(getDb(), SIPARISLER));
@@ -504,7 +521,17 @@ export async function addSiparis(
       updatedAt: now,
     });
     if (pesin && pesin.tutar > 0) {
-      tx.set(doc(collection(getDb(), KAYITLAR)), siparisOdemesiVerisi({ id: ref.id, ...input }, pesin, input.tarih));
+      const veri = siparisOdemesiVerisi({ id: ref.id, ...input }, pesin, input.tarih);
+      // Peşin alınan para doğrudan bu siparişe düşer; başka açık kalem aramaya gerek yok.
+      tx.set(doc(collection(getDb(), KAYITLAR)), {
+        ...veri,
+        tur: "tahsilat",
+        dagitim: [{ hedefTur: "siparis" as const, id: ref.id, tutar: pesin.tutar }],
+      });
+    }
+    // Firmanın avansı varsa yeni siparişe düşer: ilgili tahsilatların dağıtım dizileri yeniden yazılır.
+    for (const d of avansDusumleri(input.firmaId, ref.id, input.tutar, avansKayitlari)) {
+      tx.update(doc(getDb(), KAYITLAR, d.kayitId), { dagitim: d.dagitim, updatedAt: now });
     }
   });
   return ref;
@@ -517,14 +544,21 @@ export async function updateSiparis(id: string, patch: Partial<Omit<Siparis, "id
   return updateDoc(doc(getDb(), SIPARISLER, id), next);
 }
 
-export async function siparisOdemeAl(s: Siparis, odeme: OdemeGirdisi) {
+// Siparişten alınan ödeme de bir tahsilattır: parası `dagitim` ile açık siparişlere düşer (önce
+// başlatıldığı sipariş). `siparisId` "nereden başlatıldı" bilgisi olarak kalır; para ondan
+// sayılmaz, çünkü dağıtım taşıyan kayıtta tek kaynak `dagitim`dır (lib/dagitim.ts).
+export async function siparisOdemeAl(s: Siparis, odeme: OdemeGirdisi, dagitim: DagitimKalemi[] = []) {
   await ensureSignedIn();
-  return addDoc(collection(getDb(), KAYITLAR), siparisOdemesiVerisi(s, odeme));
+  const veri = siparisOdemesiVerisi(s, odeme);
+  return addDoc(collection(getDb(), KAYITLAR), { ...veri, tur: "tahsilat", dagitim });
 }
 
 // A payment on an order is its own Kasa record (toplamTutar = alinanTutar = the payment), so editing
 // it moves both amounts together and it stays "tamamlandi". Deleting it is the usual kayitSil.
-export async function siparisOdemesiGuncelle(id: string, patch: OdemeGirdisi & { tarih: string }) {
+export async function siparisOdemesiGuncelle(
+  id: string,
+  patch: OdemeGirdisi & { tarih: string; dagitim?: DagitimKalemi[] }
+) {
   await ensureSignedIn();
   return updateKasaKaydi(id, {
     tarih: patch.tarih,
@@ -534,7 +568,54 @@ export async function siparisOdemesiGuncelle(id: string, patch: OdemeGirdisi & {
     odemeSekli: patch.odemeSekli,
     bankaHesapId: patch.bankaHesapId,
     kartAciklama: patch.kartAciklama,
+    // Tutar değiştiyse dağıtım da baştan hesaplanır, yoksa eski dağıtım yeni tutarla tutmaz.
+    ...(patch.dagitim ? { dagitim: patch.dagitim } : {}),
   });
+}
+
+// ---- Tahsilat (Aşama 3) ----
+// Firmadan alınan para tek bir açık kaleme değil, firmanın açık kalemlerine eskiden yeniye
+// dağıtılır. Kayıt `tur: "tahsilat"` taşır: satış değil, yalnızca para girişidir, bu yüzden
+// `toplamTutar` 0'dır ve para `alinanTutar`'dadır (canlı verideki EGESER kaydıyla aynı biçim).
+// Dağıtılmayan kısım avanstır; ayrı bir alanda tutulmaz, alınan ile dağıtılanın farkından okunur.
+// Dağıtım planı çağıran tarafta kurulur (lib/dagitim.ts dagitimPlani), burada yalnızca yazılır.
+
+export interface TahsilatGirdisi {
+  tarih: string;
+  firma: string;
+  firmaId: string;
+  aciklama?: string;
+  tutar: number;
+  odemeSekli: KasaKaydi["odemeSekli"];
+  bankaHesapId?: string;
+  kartAciklama?: string;
+  siparisId?: string; // yalnızca "nereden başlatıldı" bilgisi; para dagitim'den sayılır
+  dagitim: DagitimKalemi[];
+}
+
+function tahsilatVerisi(input: TahsilatGirdisi) {
+  return {
+    tur: "tahsilat" as const,
+    tarih: input.tarih,
+    ay: monthKeyOf(input.tarih),
+    firma: input.firma,
+    firmaId: input.firmaId,
+    ...(input.siparisId ? { siparisId: input.siparisId } : {}),
+    aciklama: input.aciklama?.trim() ?? "",
+    toplamTutar: 0,
+    alinanTutar: input.tutar,
+    odemeSekli: input.odemeSekli,
+    ...odemeAlanlari(input.odemeSekli, input.bankaHesapId, input.kartAciklama),
+    dagitim: input.dagitim,
+    yon: "gelen" as const,
+    durum: "aktif" as const,
+  };
+}
+
+export async function tahsilatKaydet(input: TahsilatGirdisi) {
+  await ensureSignedIn();
+  const simdi = Date.now();
+  return addDoc(collection(getDb(), KAYITLAR), { ...tahsilatVerisi(input), createdAt: simdi, updatedAt: simdi });
 }
 
 // "Arşive Gönder" from Alacaklar: the remainder is written off and leaves every open total.
@@ -711,6 +792,9 @@ export interface MahsupGirdisi {
   bankaHesapId?: string;
   kartAciklama?: string; // "nereden çekildi" — yalnızca bilgi
   aciklama?: string;
+  // Ödeyen müşterinin açık kalemlerine dağıtım (Aşama 3): çekilen tutar, tahsilatta olduğu gibi
+  // eskiden yeniye dağıtılır. Alan tarafın etkisi (sayılan tutar) bundan ayrıdır.
+  dagitim?: DagitimKalemi[];
 }
 
 function mahsupVerisi(input: MahsupGirdisi) {
@@ -729,6 +813,7 @@ function mahsupVerisi(input: MahsupGirdisi) {
     toplamTutar: input.tutar,
     alinanTutar: input.tutar, // açık kalem sayılmasın
     sayilanTutar: input.sayilanTutar,
+    dagitim: input.dagitim ?? [],
     odemeSekli: input.odemeSekli,
     ...odemeAlanlari(input.odemeSekli, input.bankaHesapId, input.kartAciklama),
     yon: "gelen" as const,

@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { MessageSquarePlus, Pencil, Trash2, X } from "lucide-react";
-import { kayitSil, siparisOdemeAl, siparisOdemesiGuncelle, siparisSil, tahsilatNotuEkle, tahsilatNotuSil, updateSiparis } from "@/lib/db";
-import { useAyarlar, useFirmalar } from "@/lib/hooks";
+import { kayitSil, siparisOdemesiGuncelle, siparisSil, tahsilatNotuEkle, tahsilatNotuSil, updateSiparis } from "@/lib/db";
+import { tahsilatYap, yenidenDagitim } from "@/lib/tahsilat";
+import { dagitimMesaji } from "@/lib/dagitim";
+import { bildir } from "./Bildirim";
+import { useAyarlar, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { siparisHesap, odemeDurumu, tahsilatUyari } from "@/lib/siparis";
 import { siparisWaMesaji } from "@/lib/whatsapp";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL, todayISO } from "@/lib/format";
@@ -39,6 +42,10 @@ export function SiparisOdemeModal({
   kartOnerileri: string[];
   onClose: () => void;
 }) {
+  // Dağıtım firmanın bütün açık kalemlerine bakar; ikisi de paylaşılan dinleyiciden gelir, ek
+  // Firestore okuması olmaz.
+  const { kayitlar } = useKasaKayitlari();
+  const { siparisler } = useSiparisler();
   return (
     <AmountModal
       title={`Ödeme Al — ${siparis.firmaAdi}`}
@@ -49,7 +56,12 @@ export function SiparisOdemeModal({
       onClose={onClose}
       onConfirm={async (tutar, secim, tarih) => {
         try {
-          await siparisOdemeAl(siparis, { tutar, ...secim, tarih });
+          // Para önce bu siparişe düşer, artanı firmanın sıradaki en eski açık kalemine.
+          const { mesaj } = await tahsilatYap(
+            { firmaId: siparis.firmaId, firma: siparis.firmaAdi, tarih, tutar, ...secim, siparis },
+            { kayitlar, siparisler }
+          );
+          bildir(mesaj);
           onClose();
         } catch (err) {
           console.error(err);
@@ -62,20 +74,24 @@ export function SiparisOdemeModal({
 
 export default function SiparisDetayModal({
   siparis,
-  odemeKayitlari,
+  odemeSatirlari,
   odemeler,
   hesaplar,
   kartOnerileri,
   onClose,
 }: {
   siparis: Siparis;
-  odemeKayitlari: KasaKaydi[]; // Kasa records with this siparisId
+  // Bu siparişe gerçekten düşen ödemeler (lib/dagitim.ts siparisOdemeSatirlari): dağıtım taşıyan
+  // kayıttan yalnızca bu siparişe düşen tutar gelir.
+  odemeSatirlari: { kayit: KasaKaydi; tutar: number }[];
   odemeler: Map<string, number>;
   hesaplar: BankaHesabi[];
   kartOnerileri: string[];
   onClose: () => void;
 }) {
   const { firmalar } = useFirmalar();
+  const { kayitlar } = useKasaKayitlari();
+  const { siparisler } = useSiparisler();
   const { faturaTakibi } = useAyarlar();
   const [firma, setFirma] = useState<FirmaSecimi>({ firmaId: siparis.firmaId, firma: siparis.firmaAdi });
   const [form, setForm] = useState({
@@ -94,7 +110,7 @@ export default function SiparisDetayModal({
   const [duzenlenenOdemeId, setDuzenlenenOdemeId] = useState<string | null>(null);
   const [silinecekOdemeId, setSilinecekOdemeId] = useState<string | null>(null);
   const firmaKaydi = firmalar.find((f) => f.id === siparis.firmaId);
-  const duzenlenenOdeme = odemeKayitlari.find((k) => k.id === duzenlenenOdemeId);
+  const duzenlenenOdeme = odemeSatirlari.find((s) => s.kayit.id === duzenlenenOdemeId)?.kayit;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !odemeAc && !duzenlenenOdemeId && onClose();
@@ -253,7 +269,7 @@ export default function SiparisDetayModal({
                 </button>
               )}
             </div>
-            {odemeKayitlari.length === 0 && !siparis.oncekiOdenen ? (
+            {odemeSatirlari.length === 0 && !siparis.oncekiOdenen ? (
               <p className="text-xs text-[var(--muted)]">Henüz ödeme yok.</p>
             ) : (
               <ul className="rounded-[9px] border border-[var(--border)] divide-y divide-[var(--border)] text-sm">
@@ -263,9 +279,7 @@ export default function SiparisDetayModal({
                     <span className="tabular font-medium">{formatTL(siparis.oncekiOdenen)}</span>
                   </li>
                 ) : null}
-                {[...odemeKayitlari]
-                  .sort((a, b) => (a.tarih < b.tarih ? -1 : 1))
-                  .map((k) => {
+                {odemeSatirlari.map(({ kayit: k, tutar }) => {
                     const hesap = hesaplar.find((x) => x.id === k.bankaHesapId);
                     return (
                       <li key={k.id} className="px-3 py-2 flex items-center justify-between gap-3">
@@ -275,7 +289,13 @@ export default function SiparisDetayModal({
                           <GirisNotu tarih={k.tarih} createdAt={k.createdAt} />
                         </span>
                         <span className="flex items-center gap-2 shrink-0">
-                          <span className="tabular font-medium">{formatTL(k.alinanTutar)}</span>
+                          {/* Tahsilat birkaç siparişe bölünmüş olabilir: burada yalnızca bu siparişe düşen kısım. */}
+                          <span
+                            className="tabular font-medium"
+                            title={tutar !== k.alinanTutar ? `Tahsilatın tamamı ${formatTL(k.alinanTutar)}` : undefined}
+                          >
+                            {formatTL(tutar)}
+                          </span>
                           {silinecekOdemeId === k.id ? (
                             <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
                               <span className="text-[var(--brand-dark)] font-medium">Silinsin mi?</span>
@@ -362,8 +382,8 @@ export default function SiparisDetayModal({
             <div className="mt-2 rounded-[10px] bg-[var(--brand-soft)] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
               <span className="text-sm font-medium text-[var(--brand-dark)]">
                 Bu siparişi silmek istediğine emin misin?
-                {odemeKayitlari.length > 0 && (
-                  <span className="block text-xs font-normal">Bağlı {odemeKayitlari.length} ödeme kaydı da Çöp Kutusu&apos;na gider.</span>
+                {odemeSatirlari.length > 0 && (
+                  <span className="block text-xs font-normal">Bağlı {odemeSatirlari.length} ödeme kaydı da Çöp Kutusu&apos;na gider.</span>
                 )}
               </span>
               <div className="flex gap-2">
@@ -376,7 +396,7 @@ export default function SiparisDetayModal({
                   disabled={busy}
                   onClick={async () => {
                     const ok = await calistir(
-                      () => siparisSil(siparis.id, odemeKayitlari.map((k) => k.id)),
+                      () => siparisSil(siparis.id, odemeSatirlari.map((s) => s.kayit.id)),
                       "Sipariş silinemedi, lütfen tekrar deneyin."
                     );
                     if (ok) onClose();
@@ -429,11 +449,17 @@ export default function SiparisDetayModal({
           }}
           onClose={() => setDuzenlenenOdemeId(null)}
           onConfirm={async (tutar, secim, tarih) => {
+            // Tutar değişince para yeniden dağıtılır: kayıt kendi dağıtımı hesaba katılmadan,
+            // aynı kuralla (önce başlatıldığı sipariş, sonra en eski açık kalem) baştan dağıtılır.
+            const dagitim = yenidenDagitim(duzenlenenOdeme, tutar, { kayitlar, siparisler });
             const ok = await calistir(
-              () => siparisOdemesiGuncelle(duzenlenenOdeme.id, { tutar, tarih, ...secim }),
+              () => siparisOdemesiGuncelle(duzenlenenOdeme.id, { tutar, tarih, ...secim, dagitim }),
               "Ödeme güncellenemedi, lütfen tekrar deneyin."
             );
-            if (ok) setDuzenlenenOdemeId(null);
+            if (ok) {
+              bildir(dagitimMesaji(dagitim, tutar, formatTL));
+              setDuzenlenenOdemeId(null);
+            }
           }}
         />
       )}

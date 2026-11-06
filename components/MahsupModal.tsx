@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { kayitSil, komisyonKalemiBulVeyaOlustur, mahsupGuncelle, mahsupKaydet, KOMISYON_KALEMI } from "@/lib/db";
-import { useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari, kartOnerileri } from "@/lib/hooks";
+import { useBankaHesaplari, useCalisanlar, useFirmalar, useKasaKayitlari, useSiparisler, kartOnerileri } from "@/lib/hooks";
+import { tahsilatPlani, yenidenDagitim } from "@/lib/tahsilat";
+import { dagitimMesaji } from "@/lib/dagitim";
+import { bildir } from "./Bildirim";
 import { FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
 import { sayilan } from "@/lib/kayit";
 import { formatTL, todayISO, tutarOku } from "@/lib/format";
@@ -28,6 +31,7 @@ export default function MahsupModal({
   const { calisanlar } = useCalisanlar();
   const { hesaplar } = useBankaHesaplari();
   const { kayitlar } = useKasaKayitlari();
+  const { siparisler } = useSiparisler();
 
   const bos: FirmaSecimi = { firmaId: "", personelId: "", firma: "" };
   const [odeyen, setOdeyen] = useState<FirmaSecimi>(
@@ -93,8 +97,18 @@ export default function MahsupModal({
         kartAciklama: secim.kartAciklama || undefined,
         aciklama,
       };
-      if (kayit) await mahsupGuncelle(kayit.id, girdi, komisyonId ?? null, komisyonKalemi);
-      else await mahsupKaydet(girdi, komisyonKalemi);
+      // Ödeyen müşterinin parası, tahsilatta olduğu gibi açık kalemlerine eskiden yeniye dağıtılır:
+      // mahsup bugüne kadar yalnızca cari bakiyeyi düşürüyordu, sipariş açık kalıyordu. Alan
+      // tarafın etkisi (sayılan tutar) bundan ayrı, değişmedi.
+      const baglam = { kayitlar, siparisler };
+      const dagitim = odeyen.firmaId
+        ? kayit
+          ? yenidenDagitim(kayit, cekilen, baglam, odeyen.firmaId)
+          : tahsilatPlani({ firmaId: odeyen.firmaId, firma: odeyen.firma, tarih, tutar: cekilen, odemeSekli: secim.odemeSekli }, baglam)
+        : [];
+      if (kayit) await mahsupGuncelle(kayit.id, { ...girdi, dagitim }, komisyonId ?? null, komisyonKalemi);
+      else await mahsupKaydet({ ...girdi, dagitim }, komisyonKalemi);
+      if (dagitim.length > 0) bildir(dagitimMesaji(dagitim, cekilen, formatTL));
       onClose();
     } catch (err) {
       console.error(err);

@@ -6,7 +6,7 @@ import { kartOnerileri, useBankaHesaplari, useFirmalar, useKasaKayitlari } from 
 import { ODEME_SEKLI_LABEL, currentMonthKey, formatDate, formatTL, monthLabel } from "@/lib/format";
 import { aydaMi, aylikKasa, kisaAyEtiketi } from "@/lib/donem";
 import { firmaAnahtari, firmaTuru } from "@/lib/firma";
-import { KAYIT_TURU_LABEL, harcamaTutari, komisyonMu, mahsupMu, ozelKayitMi, sayilan, transferMi } from "@/lib/kayit";
+import { KAYIT_TURU_LABEL, harcamaTutari, kayitTutari, komisyonMu, mahsupMu, ozelKayitMi, sayilan, transferMi } from "@/lib/kayit";
 import type { Firma, KasaKaydi, OdemeSekli } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
@@ -67,7 +67,7 @@ function sekmedeMi(sekme: Sekme, k: KasaKaydi, firmalar: Map<string, Firma>): bo
 // belgenin kendi tutarı. Harcama sekmesinde gider olarak sayılan tutar kullanılır.
 function sekmeTutari(sekme: Sekme, k: KasaKaydi, giderMi: boolean): number {
   if (sekme === "harcama") return harcamaTutari(k, giderMi);
-  return mahsupMu(k) ? sayilan(k) : k.toplamTutar;
+  return mahsupMu(k) ? sayilan(k) : kayitTutari(k);
 }
 
 // Durum: Açık → Tamamlandı → Kapatıldı.
@@ -78,7 +78,7 @@ const ARSIV_SUTUNLARI: SiraSutunlari<KasaKaydi> = {
   firma: (k) => k.firma,
   islem: (k) => (k.yon === "gelen" ? 0 : 1),
   odeme: (k) => ODEME_SEKLI_LABEL[k.odemeSekli],
-  toplam: (k) => k.toplamTutar,
+  toplam: (k) => kayitTutari(k),
   alinan: (k) => k.alinanTutar,
   durum: (k) => DURUM_SIRASI.indexOf(k.durum),
 };
@@ -197,8 +197,8 @@ export default function ArsivPage() {
       const giderMi = !!firma && firmaTuru(firma) === "gider";
       if (transferMi(k)) transfer += k.toplamTutar;
       else if (mahsupMu(k)) mahsup += sayilan(k);
-      else if (k.yon === "gelen") gelen += k.toplamTutar;
-      else giden += k.toplamTutar;
+      else if (k.yon === "gelen") gelen += kayitTutari(k);
+      else giden += kayitTutari(k);
       harcama += harcamaTutari(k, giderMi);
     }
     return { gelen, giden, harcama, transfer, mahsup, net: gelen - giden };
@@ -461,7 +461,7 @@ export default function ArsivPage() {
                       {ODEME_SEKLI_LABEL[k.odemeSekli] ?? k.odemeSekli}
                       {k.kartAciklama && <div className="text-xs text-[var(--muted)]">{k.kartAciklama}</div>}
                     </td>
-                    <td className="num">{formatTL(k.toplamTutar)}</td>
+                    <td className="num">{formatTL(kayitTutari(k))}</td>
                     <td className="num">{formatTL(k.alinanTutar)}</td>
                     <td>
                       <DurumBadge durum={k.durum} />
@@ -509,8 +509,8 @@ function ArsivYazdirmaListesi({ kayitlar }: { kayitlar: KasaKaydi[] }) {
   }
   // Transfer ve mahsup gelir/gider olmadığı için Giriş / Çıkış sütunlarına ve toplamına girmez;
   // satırda tür işaretiyle ve kendi tutarıyla görünürler.
-  const giris = kayitlar.filter((k) => !ozelKayitMi(k) && k.yon === "gelen").reduce((t, k) => t + k.toplamTutar, 0);
-  const cikis = kayitlar.filter((k) => !ozelKayitMi(k) && k.yon === "giden").reduce((t, k) => t + k.toplamTutar, 0);
+  const giris = kayitlar.filter((k) => !ozelKayitMi(k) && k.yon === "gelen").reduce((t, k) => t + kayitTutari(k), 0);
+  const cikis = kayitlar.filter((k) => !ozelKayitMi(k) && k.yon === "giden").reduce((t, k) => t + kayitTutari(k), 0);
   return (
     <table className="yazdir-tablo hidden print:table mt-2">
       <thead>
@@ -534,8 +534,8 @@ function ArsivYazdirmaListesi({ kayitlar }: { kayitlar: KasaKaydi[] }) {
               {k.durum === "aktif" && <span className="yazdir-isaret">Açık</span>}
             </td>
             <td>{[ODEME_SEKLI_LABEL[k.odemeSekli], k.kartAciklama].filter(Boolean).join(" · ")}</td>
-            <td className="sag">{ozelKayitMi(k) ? "" : k.yon === "gelen" ? formatTL(k.toplamTutar) : ""}</td>
-            <td className="sag">{ozelKayitMi(k) ? "" : k.yon === "giden" ? formatTL(k.toplamTutar) : ""}</td>
+            <td className="sag">{ozelKayitMi(k) ? "" : k.yon === "gelen" ? formatTL(kayitTutari(k)) : ""}</td>
+            <td className="sag">{ozelKayitMi(k) ? "" : k.yon === "giden" ? formatTL(kayitTutari(k)) : ""}</td>
           </tr>
         ))}
         <tr className="genel-toplam">

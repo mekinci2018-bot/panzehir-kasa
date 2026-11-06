@@ -22,9 +22,11 @@ import {
 } from "@/lib/hooks";
 import { MAAS_TURU_LABEL, maasTuru, personelBorcuToplami } from "@/lib/personel";
 import { cariEtkileri, ozelKayitMi } from "@/lib/kayit";
-import { tahsilEt } from "@/lib/db";
 import { FIRMA_TURU_LABEL, firmaTuru, kayitBakiyesi, siparisBakiyesi } from "@/lib/firma";
-import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
+import { siparisHesap } from "@/lib/siparis";
+import { dagitimToplamlari, kayitKalani } from "@/lib/dagitim";
+import { tahsilatYap } from "@/lib/tahsilat";
+import { bildir } from "@/components/Bildirim";
 import { signed, tumHareketler, type Hareket } from "@/lib/hareketler";
 import { firmaWaMesaji, siparisWaMesaji } from "@/lib/whatsapp";
 import { daysSince, formatDate, formatTL, longDateTR, vadeDurumu, type VadeDurumu } from "@/lib/format";
@@ -100,7 +102,9 @@ export default function GenelDurumPage() {
   const [tahsilatCari, setTahsilatCari] = useState<Cari | null>(null);
   const [telefonFirma, setTelefonFirma] = useState<Firma | null>(null);
 
-  const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
+  const toplamlar = useMemo(() => dagitimToplamlari(kayitlar), [kayitlar]);
+  const odemeler = toplamlar.siparis;
+  const kayitDagitimlari = toplamlar.kayit;
   const oneriler = useMemo(() => kartOnerileri(kayitlar), [kayitlar]);
 
   // Nakit, her banka hesabı, hesabı seçilmemiş havaleler ve POS; hepsi birlikte hazır değerleri verir.
@@ -205,7 +209,7 @@ export default function GenelDurumPage() {
     for (const k of kayitlar) {
       if (!k.firmaId && !k.personelId && !k.firma) continue;
       // Bakiye etkisi tek yerden: normal kayıtta bir taraf, mahsupta iki taraf, transferde hiç.
-      for (const etki of cariEtkileri(k, kayitBakiyesi)) {
+      for (const etki of cariEtkileri(k, (x) => kayitBakiyesi(x, kayitDagitimlari))) {
         if (!etki.firmaId && !etki.personelId) continue;
         const hedef =
           etki.firmaId === k.firmaId || etki.personelId === k.personelId
@@ -215,7 +219,7 @@ export default function GenelDurumPage() {
       }
       if (ozelKayitMi(k)) continue;
       const c = al(k.firma, k.firmaId, k.personelId);
-      const kalan = k.toplamTutar - k.alinanTutar;
+      const kalan = kayitKalani(k, kayitDagitimlari);
       if (k.durum !== "aktif" || kalan <= EPS) continue;
       if (k.yon === "gelen") {
         if (!c.enEskiAlacak || k.tarih < c.enEskiAlacak) c.enEskiAlacak = k.tarih;
@@ -231,7 +235,7 @@ export default function GenelDurumPage() {
     }
 
     return [...map.values()];
-  }, [siparisler, kayitlar, firmalar, odemeler]);
+  }, [siparisler, kayitlar, firmalar, odemeler, kayitDagitimlari]);
 
   const alacaklar = useMemo(() => cariler.filter((c) => c.bakiye > EPS).sort((a, b) => b.bakiye - a.bakiye), [cariler]);
   const borclar = useMemo(() => cariler.filter((c) => c.bakiye < -EPS).sort((a, b) => a.bakiye - b.bakiye), [cariler]);
@@ -252,9 +256,10 @@ export default function GenelDurumPage() {
   const vadeliBorclar = useMemo(
     () =>
       kayitlar
-        .filter((k) => k.yon === "giden" && k.durum === "aktif" && k.vadeTarihi && k.toplamTutar - k.alinanTutar > EPS)
-        .sort((a, b) => (a.vadeTarihi! < b.vadeTarihi! ? -1 : 1)),
-    [kayitlar]
+        .filter((k) => k.yon === "giden" && k.durum === "aktif" && k.vadeTarihi && kayitKalani(k, kayitDagitimlari) > EPS)
+        .map((k) => ({ kayit: k, kalan: kayitKalani(k, kayitDagitimlari) }))
+        .sort((a, b) => (a.kayit.vadeTarihi! < b.kayit.vadeTarihi! ? -1 : 1)),
+    [kayitlar, kayitDagitimlari]
   );
 
   // Personel maaş borcu: aktif personelin kalan alacakları. Ticari borçlardan ayrı tutuluyor
@@ -343,14 +348,29 @@ export default function GenelDurumPage() {
       {tahsilatCari?.hedefKayit && (
         <AmountModal
           title={`Tahsilat Al — ${tahsilatCari.ad}`}
-          kalan={tahsilatCari.hedefKayit.toplamTutar - tahsilatCari.hedefKayit.alinanTutar}
+          kalan={kayitKalani(tahsilatCari.hedefKayit, kayitDagitimlari)}
           hesaplar={hesaplar}
           kartOnerileri={oneriler}
           defaultSecim={{ odemeSekli: "nakit", bankaHesapId: "", kartAciklama: "" }}
           onClose={() => setTahsilatCari(null)}
           onConfirm={async (tutar, secim, tarih) => {
             try {
-              await tahsilEt(tahsilatCari.hedefKayit!, { tutar, ...secim, tarih });
+              // Alacaklar'daki tek kalemle aynı yol: para önce bu kaleme, artanı firmanın
+              // sıradaki en eski açık kalemine düşer.
+              const hedef = tahsilatCari.hedefKayit!;
+              const { mesaj } = await tahsilatYap(
+                {
+                  firmaId: hedef.firmaId ?? "",
+                  firma: hedef.firma,
+                  tarih,
+                  tutar,
+                  ...secim,
+                  aciklama: hedef.aciklama,
+                  oncelikli: { hedefTur: "kayit", id: hedef.id },
+                },
+                { kayitlar, siparisler }
+              );
+              bildir(mesaj);
               setTahsilatCari(null);
             } catch (err) {
               console.error(err);
@@ -722,7 +742,7 @@ function BorcBolumu({
 }: {
   cariler: Cari[];
   toplam: number;
-  vadeliBorclar: KasaKaydi[];
+  vadeliBorclar: { kayit: KasaKaydi; kalan: number }[];
   personel: { toplam: number; satirlar: { calisan: Calisan; kalan: number }[] };
 }) {
   const gorunen = cariler.slice(0, LISTE_SINIRI);
@@ -788,7 +808,7 @@ function BorcBolumu({
               </tr>
             </thead>
             <tbody>
-              {vadeliBorclar.map((k) => {
+              {vadeliBorclar.map(({ kayit: k, kalan }) => {
                 const durum = vadeDurumu(k.vadeTarihi!);
                 return (
                   <tr key={k.id}>
@@ -800,7 +820,7 @@ function BorcBolumu({
                       <FirmaLink firmaId={k.firmaId} personelId={k.personelId} ad={k.firma} className="font-medium" />
                     </td>
                     <td className="text-[var(--muted)]">{k.aciklama || "—"}</td>
-                    <td className={`sag font-medium ${VADE_RENK[durum]}`}>{formatTL(k.toplamTutar - k.alinanTutar)}</td>
+                    <td className={`sag font-medium ${VADE_RENK[durum]}`}>{formatTL(kalan)}</td>
                   </tr>
                 );
               })}

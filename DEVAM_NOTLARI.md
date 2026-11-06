@@ -1,10 +1,48 @@
 # Devam notları
 
-Son güncelleme: 04.11.2026 (Aşama 2B, çek / senetler ve Aşama 4 bitti; sırada Aşama 2 birleştirmesi, sonra Aşama 3)
+Son güncelleme: 06.11.2026 (Aşama 3 bitti; sıradaki tek iş Genel Durum'un sadeleşmesi)
 
-## ⚠️ İş bilgisayarına geçerken
+## ⚠️ Ev bilgisayarına geçerken
 
-**Aşama 2 ev bilgisayarında yeniden yazıldı; iş bilgisayarında `git status`'ta eski Transfer/Mahsup değişikliği görünürse birleştirme, `git stash` ile kenara al, sonra `git pull`.**
+**Aşama 3 iş bilgisayarında yazıldı ve push edildi. Ev bilgisayarındaki 06.11 tarihli, push edilmemiş Aşama 3 çalışması geçersiz: orada `git stash` ile kenara al, sonra `git pull` yap. Birleştirmeye çalışma — iki uygulama aynı dosyalara (`lib/dagitim.ts`, `components/OutstandingList.tsx`, `lib/db.ts`) dokunuyor.**
+
+Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
+
+## 06.11.2026'da yapılanlar (iş bilgisayarında)
+
+### Aşama 3: Tahsilatların dağıtılması (localhost'ta test edildi, onaylandı, commit edildi)
+
+**Kurgu canlı veriden okunarak yazıldı.** Ev bilgisayarının betikleri canlı veriye iki kayıt yazmış, kod bunların biçimine birebir uyduruldu (`scripts/belge-oku.mjs` ile okundu — salt okuma inceleme betiği, commit'e dahil):
+
+- `tur: "tahsilat"` ve `dagitim: [{ hedefTur: "siparis" | "kayit", id, tutar }]`. Avans / fazla ödeme için **ayrı alan yok**: avans = `alinanTutar − Σ dagitim.tutar`.
+- İki kayıt iki biçim gösteriyor, ikisi de korundu: Kasa satırından girilen tahsilat `toplamTutar: 0` + `durum: "aktif"` (EGESER, 15.000 → excel-57 7.500 + excel-38 7.500), sipariş detayından alınan ödeme `toplamTutar = alinanTutar` + `durum: "tamamlandi"` (MEGA, 3.000).
+- **En önemli bulgu:** MEGA kaydında `siparisId` **excel-79**, dağıtımı **excel-19**. Yani `siparisId` artık yalnızca "nereden başlatıldı" bilgisidir. Eski kod ikisini birlikte sayıyordu; bu yüzden canlıda excel-79 3.000 TL fazla ödenmiş, excel-19 hiç ödenmemiş, EGESER'in 15.000'i de hiçbir yere yansımamış görünüyordu. **Tek kaynak kuralı** bu yüzden zorunlu.
+
+**Yeni `lib/dagitim.ts` — dağıtımı okuyan tek yer.** Tek kaynak kuralı (`dagitim` varsa katkı yalnızca ondan, yoksa eski `siparisId`'den), `kayitKalani()` (bir kaydın kalanı artık kendi ödemelerinin yanında **ona dağıtılmış tahsilatlarla** da kapanır), `avans()`, `acikHedefler()` (sipariş + kasa kalemleri birlikte, eskiden yeniye), `dagitimPlani()`, `siparisOdemeSatirlari()`, `firmaAvansi()`, `avansDusumleri()`. `siparisOdemeleri()` buraya taşındı — `lib/siparis.ts`'te kalsa plan `siparisHesap()`'a ihtiyaç duyduğu için döngüsel import olurdu.
+
+**Yeni `lib/tahsilat.ts` — yazmanın tek yolu.** Nereden başlatılırsa başlatılsın (Alacaklar firma satırı, Alacaklar tek kalem, sipariş detayı, Kasa satırı, Genel Durum kısayolu, mahsup) plan + yazma + bildirim mesajı buradan geçer.
+
+- **Eskiden yeniye dağıtım**, tek kalemden başlanmışsa **o kalem başa alınır**; kalanı yoksa sıradaki en eskiye geçer (MEGA kaydının davranışı birebir bu).
+- **Avans**: dağıtılmayan kısım. Yeni sipariş açılınca `addSiparis` **aynı Firestore işleminde** en eski avanstan başlayarak düşürür. Notlarda "(onaylı)" yazıyordu; 06.11'de **otomatik** olmasına karar verildi, onay sorulmuyor, yalnızca bildirim veriliyor.
+- **Kasa'da firma + Toplam boş + Peşin dolu** giriş artık tahsilat sayılıp dağıtılıyor (eskiden cariye hiç yansımıyordu).
+- **Mahsupta müşteri tarafı** da aynı kuralla dağıtılıyor; alan tarafın etkisi (sayılan tutar) değişmedi.
+- **Silme / düzenleme:** silinen kayıt listeden düştüğü an dağıtımı da geri alınır (çöpten dönünce tekrar uygulanır) — ayrı bir geri alma kodu gerekmedi, çünkü dağıtım hep canlı kayıtlardan hesaplanıyor. Tutar düzenlenince (`yenidenDagitim`) kayıt kendi payı hesaba katılmadan baştan dağıtılır: kayıt detayı, sipariş ödemesi düzenle, mahsup.
+- **Pencereler değişmedi** (yeni alan / önizleme yok). Tek yeni parça `components/Bildirim.tsx`: `₺15.000,00 → 2 siparişe dağıtıldı · ₺500,00 avansta kaldı` şeridi, `app/layout.tsx`'te duruyor, her yerden `bildir()` ile çağrılıyor.
+
+**Zorunlu iki yan düzeltme:**
+
+- Tahsilatta `toplamTutar` 0 olabildiği için Arşiv, Çöp Kutusu ve "Bugün girilenler" tutarı yeni `kayitTutari()` ile okuyor — yoksa Arşiv'in Giriş toplamı o 15.000'i saymazdı. `ozelKayitMi()` bilinçli olarak tahsilatı **dışarıda bırakıyor**: tahsilat gerçek bir para girişidir, Arşiv'in Gelen sekmesinde normal giriş gibi sayılır; özel yanı yalnızca cari etkisinin avansla sınırlı olması ve ekstrede borç satırı üretmemesi.
+- Sipariş detayındaki "Ödemeler" listesi artık dağıtıma göre, o siparişe **düşen payı** gösteriyor (`siparisOdemeSatirlari`). Yoksa MEGA'da ödeme excel-79'da görünüp o siparişin kalanını düşürmüyordu.
+
+**Doğrulama:** `tsc --noEmit`, `eslint`, `npm run build` temiz; **74 birim kontrolü** çalıştırıldı ve hepsi geçti — canlı verideki iki kaydın senaryosu, tek kaynak kuralı, çift sayma olmaması, plan sırası ve öncelikli kalem, avans ve sonraki siparişe düşmesi, kasa kaydına dağıtım, silinen tahsilatın dağıtımı geri alması, mahsubun iki tarafı, dağıtımı olmayan eski kayıtların bozulmaması, bildirim metni, sipariş ödeme listesi.
+
+`scripts/tutarsizlik-rapor.mjs` yeni modele göre güncellendi (tek kaynak kuralı, avans, `cariEtkileri`); yeni **D bölümü** hedefi silinmiş ya da kaydın tutarını aşan dağıtım satırlarını arıyor. **06.11'de çalıştırıldı: tek bulgu HİZMET firmasında 1.200 TL avans**, bozuk dağıtım satırı yok.
+
+### Kasa'ya Personel Borcu kartı + Alacaklar'da firma bazında gruplama (commit `bf37c2f`)
+
+- Aşama 4'ten kalan tek parça: Kasa özet şeridinde **Personel Borcu** kutusu (aktif personelin kalan maaş alacağı, Genel Durum'daki aynı `personelBorcuToplami()`). **Ödenecek Borç'a dahil değil** — ticari borç değil. `StatStrip`'in `xl` kolon sayısı artık kutu sayısını izliyor, yoksa 7. kutu tek başına alt sıraya düşüyordu.
+- Alacaklar'da `gruplu` bayrağı açıldı (Borçlar'da 04.11'de yazılan yapı): aynı müşterinin açık kalemleri tek satırda, tıklayınca açılıyor. `grupOzeti()` Borçlar'da belge dökümü ("7 senet · 2 çek"), Alacaklar'da sipariş dökümü ("5 sipariş · 1 kalem") yazıyor. Grup satırında **Gecikmiş** rozeti (kapalıyken gecikme gizlenmesin diye) ve firma bazında **Ödeme Al** düğmesi var — Alacaklar'da bu düğme Aşama 3'ün dağıtımlı penceresini açıyor, Borçlar'da (dağıtım yok) en eski kalemin penceresini.
+- Mobil grup başlığı `<button>`'dan `role="button"` div'e çevrildi: firma linki (bir `<a>`) bir `<button>`'un içinde duruyordu, geçersiz HTML idi.
 
 ## 04.11.2026'da yapılanlar
 
@@ -58,7 +96,7 @@ Son güncelleme: 04.11.2026 (Aşama 2B, çek / senetler ve Aşama 4 bitti; sıra
 
 **Aşama 3'e bırakılan:** mahsubun **sipariş kalanına** yansıması (şimdilik yalnızca cari bakiye).
 
-### Aşama 3'ün ilk adımı hazır: tutarsızlık raporu (salt okuma, henüz çalıştırılmadı)
+### Aşama 3’ün ilk adımı: tutarsızlık raporu (salt okuma; 06.11.2026’da çalıştırıldı)
 
 - `scripts/tutarsizlik-rapor.mjs` — hiçbir şey yazmaz. Hesap mantığı uygulamayla birebir aynı (`siparisOdemeleri`, `siparisHesap`, `kayitBakiyesi`, `siparisBakiyesi`).
 - **A)** Bakiye farkı olan firmalar: `cari bakiye` ile `sipariş kalanı + açık alacak kalemleri − açık borç kalemleri` karşılaştırması, fark ve nedeni (siparişleri aşan ödeme / avans, hangi siparişte ne kadar).
@@ -79,7 +117,7 @@ Son güncelleme: 04.11.2026 (Aşama 2B, çek / senetler ve Aşama 4 bitti; sıra
 - **Genel Durum:** Ticari Borçlar bölümünün altında **Personel** tablosu (aktif personel, maaş türü/tutarı, kalan + toplam). **Karar (04.11):** personel borcu Ticari Borçlar toplamına girmez (ticari borç değil) ama **Net Finansal Durum'dan düşülür** → Net = Hazır değerler + Ticari alacaklar − Ticari borçlar − Personel borcu. Özet şeridindeki açıklama satırı ve Ticari Borçlar kutusunun altındaki "Personel borcu ayrı: ₺X" satırı bunu gösteriyor; yazdırma çıktısı da aynı.
 - `lib/yedekBicimi.ts` → tarayıcı yedeği listesine `personelHareketleri` eklendi (yoksa "Bilgisayara İndir" bu koleksiyonu atlardı). Firestore kuralları koleksiyon adı bazlı değil, ek kural gerekmedi.
 - **Doğrulama:** `tsc --noEmit`, `eslint`, `npm run build` temiz; dönem ve ekstre mantığı için 32 birim testi çalıştırıldı ve hepsi geçti (Pazartesi bulma ve yıl sonu, dönem kimliği/etiketi, devreden tarihine göre dönem üretimi, aynı dönemin iki kez yazılmaması, pasif/maaşsız personel, 26 hafta / 12 ay sınırı, kalan hesabı, ekstrenin tarih sırası ve yürüyen bakiyesi, pasif personelin toplamdan düşmesi).
-- **Kalan tek parça:** Kasa özet şeridine "Personel Borcu" kartı — Aşama 2 birleştirmesinden sonra eklenecek (Kasa dosyalarına çakışma riski yüzünden bilerek dokunulmadı).
+- **Kalan tek parça tamamlandı:** Kasa özet şeridindeki "Personel Borcu" kartı 06.11.2026'da eklendi (commit `bf37c2f`).
 
 ## 03.11.2026'da yapılanlar
 
@@ -108,7 +146,11 @@ Son güncelleme: 04.11.2026 (Aşama 2B, çek / senetler ve Aşama 4 bitti; sıra
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
-**Sıra (04.11.2026 akşamı itibarıyla):** **Aşama 2, 2B ve 4 bitti.** Sıradaki iş **Aşama 3** — tahsilatların siparişlere dağıtılması: önce `scripts/tutarsizlik-rapor.mjs` çıktısı, sonra `KasaKaydi.dagitim` kurgusu ve **Alacaklar'ın firma bazında gruplanması** (Borçlar'da çalışan `gruplu` yapısı Alacaklar'a açılacak). Aşama 3'te ayrıca **mahsubun sipariş kalanına yansıması** yapılacak (şimdilik yalnızca cari bakiyeyi etkiliyor). Son olarak Kasa özet şeridine "Personel Borcu" kartı.
+**Sıra (06.11.2026 itibarıyla): Aşama 2, 2B, 3 ve 4 bitti.** Sıradaki **tek iş: Genel Durum'un sadeleşmesi.**
+
+### Sıradaki iş — Genel Durum'un sadeleşmesi
+
+Sayfa şu anda çok kalabalık: dört özet kutusu, hazır değerler tablosu, yaşlandırma çubuğu, ilk-10 alacak ve borç tabloları, vadesi yaklaşan ödemeler alt tablosu ve personel tablosu bir arada. Hangi bölümlerin kalacağı, hangilerinin birleşeceği ya da kaldırılacağı bir sonraki oturumda kararlaştırılacak; karar verilmeden koda dokunulmayacak.
 
 ### Aşama 2 — Hesaplar arası transfer (virman) + Mahsup · **BİTTİ** (04.11.2026, ev bilgisayarında yeniden yazıldı)
 
@@ -138,7 +180,12 @@ Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce
 
 Ayrıntı yukarıda, "04.11.2026'da yapılanlar" bölümünde. Geriye yalnızca çek / senet kayıtlarının girilmesi kaldı (aynı bölümün sonundaki adımlar).
 
-### Aşama 3 — Tahsilatların siparişlere dağıtılması (**Aşama 2 birleştirmesinden sonra sıradaki iş**; Mahsup ve Alacaklar gruplaması dahil)
+### Aşama 3 — Tahsilatların siparişlere dağıtılması · **BİTTİ** (06.11.2026, iş bilgisayarında)
+
+> Ayrıntı yukarıda, 06.11.2026 bölümünde. Aşağıdaki kurgu kararlarının tamamı uygulandı. **Üç sapma:**
+> 1. Kaydetmeden önce **dağıtım önizlemesi ve elle değiştirme yapılmadı** — "pencere değişmesin, sadece `₺X → N siparişe dağıtıldı` bildirimi" kararıyla (06.11).
+> 2. Avansın sonraki siparişe düşmesi **onay sormuyor**, otomatik (06.11 kararı).
+> 3. Dağıtılmamış eski tahsilatlar için **göç betiği yazılmadı**: tutarsızlık raporu tek bir kalem buldu (HİZMET firmasında 1.200 TL avans), toplu dağıtıma gerek kalmadı. Düz Kasa Girişleri bundan sonra girildikleri anda tahsilat olarak dağıtılıyor; eski kayıtlar dokunulmadan çalışmaya devam ediyor.
 
 - **Önce, hiçbir şey değiştirmeden tutarsızlık raporu:** her firma için (cari bakiye) ile (siparişlerin kalan toplamı + diğer alacaklar) karşılaştırılacak; farkı olan firmalar ve farkın nedeni (hangi tahsilat siparişlere dağıtılmamış) listelenecek. Onaydan sonra, yedek alarak, dağıtılmamış tahsilatlar aynı kuralla (eskiden yeniye) dağıtılacak ve sonuç raporlanacak.
 - **Önemli bulgu (03.11.2026):** sorun yalnızca "dağıtım yok" değil. Firmadan alınan düz bir Kasa Girişi şu anda cariye **hiç** yansımıyor — `toplamTutar = alinanTutar` olduğu için "peşin satış" gibi modelleniyor ve ekstrede borç + alacak satırı birbirini sıfırlıyor. Bu yüzden `tur: "tahsilat"` diye ayrı bir kayıt türü gerekiyor: ekstrede yalnızca alacak satırı üretir, bakiyeye dağıtılmamış kısmı kadar etki eder.

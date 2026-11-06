@@ -5,7 +5,11 @@ import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, ChevronRight, Handshake, Plus } from "lucide-react";
 import { kartOnerileri, useBankaHesaplari, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { addKasaKaydi, arsiveGonder, siparisKapat, tahsilEt } from "@/lib/db";
-import { siparisHesap, siparisOdemeleri } from "@/lib/siparis";
+import { siparisHesap } from "@/lib/siparis";
+import { dagitimToplamlari, kayitKalani } from "@/lib/dagitim";
+import { ozelKayitMi } from "@/lib/kayit";
+import { tahsilatYap } from "@/lib/tahsilat";
+import { bildir } from "./Bildirim";
 import { belgeOzeti } from "@/lib/belge";
 import { currentMonthKey, daysSince, formatDate, formatTL, monthLabel, vadeDurumu, type VadeDurumu } from "@/lib/format";
 import { aydaMi, aydanOnceMi, kisaAyEtiketi } from "@/lib/donem";
@@ -115,11 +119,15 @@ export default function OutstandingList({
   const [ay, setAy] = useState(currentMonthKey);
   const [acikGruplar, setAcikGruplar] = useState<string[]>([]);
   const [mahsupFor, setMahsupFor] = useState<{ odeyen?: FirmaSecimi; alan?: FirmaSecimi } | null>(null);
+  // Firma satırından alınan tahsilat: tutar firmanın bütün açık kalemlerine eskiden yeniye dağıtılır.
+  const [firmaTahsilat, setFirmaTahsilat] = useState<Grup | null>(null);
 
   // Earliest due first; records without a due date fall back to their entry date.
   const items = useMemo(() => {
+    // Bir kaydın kalanı, kendi ödemelerinin yanında ona dağıtılmış tahsilatlarla da kapanır.
+    const toplamlar = dagitimToplamlari(kayitlar);
     const list: AcikKalem[] = kayitlar
-      .filter((k) => k.yon === yon && k.durum === "aktif" && k.toplamTutar - k.alinanTutar > 0)
+      .filter((k) => k.yon === yon && k.durum === "aktif" && !ozelKayitMi(k) && kayitKalani(k, toplamlar.kayit) > 0)
       .map((k) => ({
         key: k.id,
         tarih: k.tarih,
@@ -128,11 +136,11 @@ export default function OutstandingList({
         personelId: k.personelId,
         aciklama: k.aciklama,
         vade: k.vadeTarihi,
-        kalan: k.toplamTutar - k.alinanTutar,
+        kalan: kayitKalani(k, toplamlar.kayit),
         kayit: k,
       }));
     if (yon === "gelen") {
-      const odemeler = siparisOdemeleri(kayitlar);
+      const odemeler = toplamlar.siparis;
       for (const s of siparisler) {
         const { kalan } = siparisHesap(s, odemeler);
         if (kalan <= 0) continue;
@@ -227,16 +235,22 @@ export default function OutstandingList({
     return [siparis ? `${siparis} sipariş` : "", diger ? `${diger} kalem` : ""].filter(Boolean).join(" · ");
   }
 
-  // Firma satırındaki kısayol: en eski açık kalemin penceresini açar. Aşama 3'te yerini, tutarı
-  // bütün açık siparişlere eskiden yeniye dağıtan pencere alacak.
+  // Firma satırındaki kısayol. Alacaklarda firma bazında tahsilat: girilen tutar firmanın açık
+  // kalemlerine eskiden yeniye dağıtılır. Borçlarda (dağıtım yok) en eski kalemin penceresi açılır.
   function GrupButonu({ g, kucuk = false }: { g: Grup; kucuk?: boolean }) {
+    const dagitimli = yon === "gelen";
     return (
       <button
         className={`btn-primary ${kucuk ? "!py-1 !px-2.5 !text-[11px]" : "!py-1.5 !px-3 !text-xs"} whitespace-nowrap`}
-        title={`En eski açık kalem · ${formatDate(g.enEski.tarih)}${g.enEski.aciklama ? " · " + g.enEski.aciklama : ""}`}
+        title={
+          dagitimli
+            ? `Tutar ${g.kalemler.length} açık kaleme eskiden yeniye dağıtılır`
+            : `En eski açık kalem · ${formatDate(g.enEski.tarih)}${g.enEski.aciklama ? " · " + g.enEski.aciklama : ""}`
+        }
         onClick={(e) => {
           e.stopPropagation();
-          odemeAc(g.enEski);
+          if (dagitimli) setFirmaTahsilat(g);
+          else odemeAc(g.enEski);
         }}
       >
         {actionLabel}
@@ -612,14 +626,62 @@ export default function OutstandingList({
       {modalFor && (
         <AmountModal
           title={`${actionLabel} — ${modalFor.firma}`}
-          kalan={modalFor.toplamTutar - modalFor.alinanTutar}
+          kalan={kayitKalani(modalFor, dagitimToplamlari(kayitlar).kayit)}
           hesaplar={hesaplar}
           kartOnerileri={kartOnerileri(kayitlar)}
           defaultSecim={varsayilanSecim(modalFor)}
           onClose={() => setModalFor(null)}
           onConfirm={async (amount, secim, tarih) => {
-            await tahsilEt(modalFor, { tutar: amount, ...secim, tarih });
-            setModalFor(null);
+            try {
+              // Alacakta para önce bu kaleme düşer, artanı firmanın sıradaki en eski kalemine;
+              // borçta dağıtım yoktur, ödeme doğrudan kaydın kendisine yazılır.
+              if (yon === "gelen" && modalFor.firmaId) {
+                const { mesaj } = await tahsilatYap(
+                  {
+                    firmaId: modalFor.firmaId,
+                    firma: modalFor.firma,
+                    tarih,
+                    tutar: amount,
+                    ...secim,
+                    aciklama: modalFor.aciklama,
+                    oncelikli: { hedefTur: "kayit", id: modalFor.id },
+                  },
+                  { kayitlar, siparisler }
+                );
+                bildir(mesaj);
+              } else {
+                await tahsilEt(modalFor, { tutar: amount, ...secim, tarih });
+              }
+              setModalFor(null);
+            } catch (err) {
+              console.error(err);
+              alert("Kaydedilemedi, lütfen tekrar deneyin.");
+            }
+          }}
+        />
+      )}
+
+      {/* Firma bazında tahsilat: tutar firmanın açık kalemlerine eskiden yeniye dağıtılır. */}
+      {firmaTahsilat && firmaTahsilat.firmaId && (
+        <AmountModal
+          title={`${actionLabel} — ${firmaTahsilat.ad}`}
+          kalan={firmaTahsilat.toplam}
+          hesaplar={hesaplar}
+          kartOnerileri={kartOnerileri(kayitlar)}
+          defaultSecim={{ odemeSekli: "nakit", bankaHesapId: "", kartAciklama: "" }}
+          onClose={() => setFirmaTahsilat(null)}
+          onConfirm={async (amount, secim, tarih) => {
+            try {
+              const { mesaj } = await tahsilatYap(
+                { firmaId: firmaTahsilat.firmaId!, firma: firmaTahsilat.ad, tarih, tutar: amount, ...secim },
+                { kayitlar, siparisler }
+              );
+              bildir(mesaj);
+              setFirmaTahsilat(null);
+            } catch (err) {
+              console.error(err);
+              alert("Tahsilat kaydedilemedi, lütfen tekrar deneyin.");
+            }
           }}
         />
       )}

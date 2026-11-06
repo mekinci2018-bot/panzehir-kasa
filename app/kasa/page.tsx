@@ -6,7 +6,7 @@ import { ArrowRight, ArrowLeftRight, Handshake } from "lucide-react";
 import TransferModal from "@/components/TransferModal";
 import MahsupModal from "@/components/MahsupModal";
 import SatirMenu from "@/components/SatirMenu";
-import { KAYIT_TURU_LABEL, mahsupEtiketi, ozelKayitMi, sayilan, transferMi } from "@/lib/kayit";
+import { KAYIT_TURU_LABEL, kayitTutari, mahsupEtiketi, ozelKayitMi, sayilan, transferMi } from "@/lib/kayit";
 import StatStrip from "@/components/StatStrip";
 import PageHeader from "@/components/PageHeader";
 import KayitDetayModal from "@/components/KayitDetayModal";
@@ -30,7 +30,9 @@ import {
   useSiparisler,
 } from "@/lib/hooks";
 import { personelBorcuToplami } from "@/lib/personel";
-import { firmaSiparisOzetleri, siparisHesap, siparisOdemeleri } from "@/lib/siparis";
+import { firmaSiparisOzetleri, siparisHesap } from "@/lib/siparis";
+import { dagitimToplamlari, kayitKalani, siparisOdemeSatirlari } from "@/lib/dagitim";
+import { tahsilatYap } from "@/lib/tahsilat";
 import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
 import { tumHareketler, signed } from "@/lib/hareketler";
@@ -81,7 +83,7 @@ export default function KasaPage() {
   const { hareketler: personelHareketleri } = usePersonelHareketleri();
   const { siparisler } = useSiparisler();
   const [drafts, setDrafts] = useState<DraftSlot[]>(() => Array.from({ length: DRAFT_COUNT }, () => newSlot()));
-  const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit } | null>(null);
+  const [geriAl, setGeriAl] = useState<{ id: string; draft: DraftKayit; mesaj?: string } | null>(null);
   const geriAlTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detayId, setDetayId] = useState<string | null>(null);
   const [siparisDetayId, setSiparisDetayId] = useState<string | null>(null);
@@ -98,7 +100,9 @@ export default function KasaPage() {
 
   const oneriler = useMemo(() => kartOnerileri(kayitlar), [kayitlar]);
   const ayDonemi = useMemo(() => aylikKasa(kayitlar, ozetAyi), [kayitlar, ozetAyi]);
-  const odemeler = useMemo(() => siparisOdemeleri(kayitlar), [kayitlar]);
+  const toplamlar = useMemo(() => dagitimToplamlari(kayitlar), [kayitlar]);
+  const odemeler = toplamlar.siparis;
+  const kayitDagitimlari = toplamlar.kayit;
   const ozetler = useMemo(() => cariOzetleri(kayitlar, "firmaId", siparisler, odemeler), [kayitlar, siparisler, odemeler]);
   const siparisOzetleri = useMemo(() => firmaSiparisOzetleri(siparisler, odemeler), [siparisler, odemeler]);
   const personelOzetleri = useMemo(() => cariOzetleri(kayitlar, "personelId"), [kayitlar]);
@@ -143,7 +147,7 @@ export default function KasaPage() {
     for (const k of kayitlar) {
       // Transfer / mahsup kayıtları kapalı kaydedilir (alınan = toplam), yine de açıkça atlanıyor.
       if (k.durum !== "aktif" || ozelKayitMi(k)) continue;
-      const kalan = k.toplamTutar - k.alinanTutar;
+      const kalan = kayitKalani(k, kayitDagitimlari);
       if (kalan <= 0) continue;
       if (k.yon === "gelen") toplamAlacak += kalan;
       else toplamBorc += kalan;
@@ -151,7 +155,7 @@ export default function KasaPage() {
     // Order remainders are owed to us too; their payments are already in the Kasa totals above.
     for (const s of siparisler) toplamAlacak += siparisHesap(s, odemeler).kalan;
     return { nakit, banka, kartPos, toplam: nakit + banka + kartPos, toplamAlacak, toplamBorc };
-  }, [kayitlar, siparisler, odemeler]);
+  }, [kayitlar, siparisler, odemeler, kayitDagitimlari]);
 
   // Entered today (by save time, not the record's own date), newest first.
   const bugunGirilenler = useMemo(() => {
@@ -197,9 +201,9 @@ export default function KasaPage() {
     return [...map.values()].sort((a, b) => b.toplamKalan - a.toplamKalan);
   }, [siparisler, odemeler, firmalar]);
 
-  function bildirimGoster(id: string, draft: DraftKayit) {
+  function bildirimGoster(id: string, draft: DraftKayit, mesaj?: string) {
     if (geriAlTimer.current) clearTimeout(geriAlTimer.current);
-    setGeriAl({ id, draft });
+    setGeriAl({ id, draft, mesaj });
     geriAlTimer.current = setTimeout(() => setGeriAl(null), GERI_AL_MS);
   }
 
@@ -213,14 +217,35 @@ export default function KasaPage() {
     focusFirstEmptyDraft();
 
     try {
+      const toplam = Number(d.toplamTutar) || 0;
+      const pesin = Number(d.alinanTutar) || 0;
+      // Firmadan para alındı ama satış yok (Toplam boş, yalnızca Peşin dolu): bu bir tahsilattır.
+      // Açık kalemlere eskiden yeniye dağıtılır; eskiden böyle bir giriş cariye hiç yansımıyordu.
+      if (d.firmaId && d.yon === "gelen" && toplam <= 0 && pesin > 0) {
+        const { id, mesaj } = await tahsilatYap(
+          {
+            firmaId: d.firmaId,
+            firma: d.firma.trim(),
+            tarih: d.tarih,
+            tutar: pesin,
+            odemeSekli: d.odemeSekli,
+            bankaHesapId: d.bankaHesapId,
+            kartAciklama: d.kartAciklama,
+            aciklama: d.aciklama.trim(),
+          },
+          { kayitlar, siparisler }
+        );
+        bildirimGoster(id, d, mesaj);
+        return;
+      }
       const ref = await addKasaKaydi({
         tarih: d.tarih,
         firma: d.firma.trim(),
         firmaId: d.firmaId,
         personelId: d.personelId,
         aciklama: d.aciklama.trim(),
-        toplamTutar: Number(d.toplamTutar) || 0,
-        alinanTutar: Number(d.alinanTutar) || 0,
+        toplamTutar: toplam,
+        alinanTutar: pesin,
         odemeSekli: d.odemeSekli,
         bankaHesapId: d.bankaHesapId,
         kartAciklama: d.kartAciklama,
@@ -426,7 +451,7 @@ export default function KasaPage() {
         <SiparisDetayModal
           key={siparisDetay.id}
           siparis={siparisDetay}
-          odemeKayitlari={kayitlar.filter((k) => k.siparisId === siparisDetay.id)}
+          odemeSatirlari={siparisOdemeSatirlari(siparisDetay.id, kayitlar)}
           odemeler={odemeler}
           hesaplar={hesaplar}
           kartOnerileri={oneriler}
@@ -461,7 +486,7 @@ export default function KasaPage() {
 
       {geriAl && (
         <div className="toast-in fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 rounded-xl bg-[var(--ink)] text-white pl-4 pr-2 py-2 text-sm shadow-[var(--shadow-pop)]">
-          <span>Arşive kaydedildi</span>
+          <span className="tabular">{geriAl.mesaj ?? "Arşive kaydedildi"}</span>
           <span className="text-white/30">·</span>
           <button className="font-semibold text-white hover:bg-white/10 rounded-lg px-2.5 py-1 transition-colors" onClick={geriAlUygula}>
             Geri al
@@ -477,7 +502,7 @@ const BUGUN_SUTUNLARI: SiraSutunlari<KasaKaydi> = {
   saat: (k) => k.createdAt,
   firma: (k) => k.firma,
   aciklama: (k) => k.aciklama,
-  tutar: (k) => (k.yon === "gelen" ? k.toplamTutar : -k.toplamTutar),
+  tutar: (k) => (k.yon === "gelen" ? kayitTutari(k) : -kayitTutari(k)),
 };
 
 function BugunGirilenler({
@@ -571,7 +596,7 @@ function BugunGirilenler({
                     }`}
                   >
                     {ozel ? "" : k.yon === "gelen" ? "+" : "−"}
-                    {formatTL(k.tur === "mahsup" ? sayilan(k) : k.toplamTutar)}
+                    {formatTL(k.tur === "mahsup" ? sayilan(k) : kayitTutari(k))}
                   </span>
                   {!ozel && (k.firmaId || k.personelId) && (
                     <span onClick={(e) => e.stopPropagation()}>

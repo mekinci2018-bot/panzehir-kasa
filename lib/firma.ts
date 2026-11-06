@@ -8,9 +8,11 @@ import {
   mahsupMu,
   ozelKayitMi,
   sayilan,
+  tahsilatMi,
   transferMi,
 } from "./kayit";
 import { siparisHesap } from "./siparis";
+import { dagitimToplamlari, kayitKalani } from "./dagitim";
 import type { Firma, FirmaTuru, KasaKaydi, Siparis } from "./types";
 
 export const FIRMA_TURU_LABEL: Record<FirmaTuru, string> = {
@@ -72,8 +74,10 @@ export function benzerFirmalar(ad: string, firmalar: Firma[], limit = 3): Firma[
     .map((x) => x.f);
 }
 
-function acikKalan(k: KasaKaydi): number {
-  const kalan = k.toplamTutar - k.alinanTutar;
+// Pozitif: cari bize borçlu. Kaydın kendi ödemelerinin yanında, ona dağıtılmış tahsilatlar da
+// kalanı düşürür (lib/dagitim.ts kayitKalani).
+function acikKalan(k: KasaKaydi, kayitDagitimlari?: Map<string, number>): number {
+  const kalan = kayitKalani(k, kayitDagitimlari);
   return k.yon === "gelen" ? kalan : -kalan;
 }
 
@@ -109,8 +113,8 @@ function komisyonSatirlari(k: KasaKaydi): Omit<EkstreSatiri, "bakiye">[] {
 // so per company this matches Alacaklar / Borçlar exactly. Equals the statement's final balance.
 // Transfer / mahsup records are closed on save (alinan = toplam), so this is 0 for them; their real
 // effect comes from cariEtkileri in lib/kayit.ts.
-export function kayitBakiyesi(k: KasaKaydi): number {
-  return k.durum === "arsiv" ? 0 : acikKalan(k);
+export function kayitBakiyesi(k: KasaKaydi, kayitDagitimlari?: Map<string, number>): number {
+  return k.durum === "arsiv" ? 0 : acikKalan(k, kayitDagitimlari);
 }
 
 export interface EkstreSatiri {
@@ -142,6 +146,9 @@ export function ekstreOlustur(
   firmaId?: string // mahsupta hangi tarafın ekstresi olduğunu belirler
 ): EkstreSatiri[] {
   const satirlar: Omit<EkstreSatiri, "bakiye">[] = [];
+  // Bir kayda dağıtılmış tahsilat hep aynı firmanın tahsilatıdır, bu yüzden firmanın kendi
+  // kayıtlarından hesaplanması yeterli.
+  const kayitDagitimlari = dagitimToplamlari(kayitlar).kayit;
   for (const s of [...siparisler].sort((a, b) => a.createdAt - b.createdAt)) {
     const ad = s.urun || "Sipariş";
     satirlar.push({ key: `${s.id}-s`, tarih: s.tarih, aciklama: `Sipariş · ${ad}`, kayitId: s.id, siparis: true, borc: s.tutar, alacak: 0 });
@@ -182,7 +189,9 @@ export function ekstreOlustur(
       continue;
     }
     const baslik = k.aciklama || (k.yon === "gelen" ? "Satış" : "Alış");
-    if (k.toplamTutar && !k.siparisId) {
+    // Tahsilat bir satış değil: yalnızca para girişi satırı üretir. Borç satırı yazılsa, karşılığı
+    // olan sipariş zaten ekstrede durduğu için aynı borç iki kez görünürdü.
+    if (k.toplamTutar && !k.siparisId && !tahsilatMi(k)) {
       satirlar.push({
         key: `${k.id}-t`,
         tarih: k.tarih,
@@ -205,7 +214,7 @@ export function ekstreOlustur(
       });
     });
     // A remainder closed with "Arşive Gönder" gets its own row that brings the record to zero.
-    const kapanan = k.durum === "arsiv" ? acikKalan(k) : 0;
+    const kapanan = k.durum === "arsiv" ? acikKalan(k, kayitDagitimlari) : 0;
     if (Math.abs(kapanan) >= 0.005) {
       satirlar.push({
         key: `${k.id}-k`,
@@ -241,6 +250,7 @@ export function cariOzetleri(
   odemeler: Map<string, number> = new Map()
 ): Map<string, CariOzet> {
   const map = new Map<string, CariOzet>();
+  const kayitDagitimlari = dagitimToplamlari(kayitlar).kayit;
   if (alan === "firmaId") {
     for (const s of siparisler) {
       const o = map.get(s.firmaId) ?? { bakiye: 0, harcama: 0, kayitSayisi: 0, sonTarih: "" };
@@ -251,7 +261,7 @@ export function cariOzetleri(
   }
   for (const k of kayitlar) {
     // Her kaydın etkisi tek yerden okunur: normal kayıtta bir taraf, mahsupta iki taraf, transferde hiç.
-    for (const etki of cariEtkileri(k, kayitBakiyesi)) {
+    for (const etki of cariEtkileri(k, (x) => kayitBakiyesi(x, kayitDagitimlari))) {
       const id = etki[alan];
       if (!id) continue;
       const o = map.get(id) ?? { bakiye: 0, harcama: 0, kayitSayisi: 0, sonTarih: "" };

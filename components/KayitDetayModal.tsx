@@ -11,7 +11,11 @@ import FirmaLink from "./FirmaLink";
 import { GirisNotu } from "./TarihAlani";
 import SatirMenu from "./SatirMenu";
 import AmountModal from "./AmountModal";
-import { useCalisanlar, useFirmalar } from "@/lib/hooks";
+import { useCalisanlar, useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import { tahsilatMi } from "@/lib/kayit";
+import { yenidenDagitim } from "@/lib/tahsilat";
+import { dagitimMesaji } from "@/lib/dagitim";
+import { bildir } from "./Bildirim";
 
 function girisZamani(ms: number): string {
   return new Date(ms).toLocaleString("tr-TR", {
@@ -37,6 +41,8 @@ export default function KayitDetayModal({
 }) {
   const { firmalar } = useFirmalar();
   const { calisanlar } = useCalisanlar();
+  const { kayitlar } = useKasaKayitlari();
+  const { siparisler } = useSiparisler();
   const [firma, setFirma] = useState<FirmaSecimi>({
     firmaId: kayit.firmaId ?? "",
     personelId: kayit.personelId ?? "",
@@ -80,7 +86,13 @@ export default function KayitDetayModal({
     if (!firma.firma.trim() || busy) return;
     setBusy(true);
     try {
+      // Tahsilatın tutarı değişince para yeniden dağıtılır (kaydın kendi dağıtımı hesaba
+      // katılmadan), yoksa eski dağıtım yeni tutarla tutmaz.
+      const dagitim = tahsilatMi(kayit)
+        ? yenidenDagitim(kayit, alinan, { kayitlar, siparisler }, firma.firmaId || kayit.firmaId)
+        : null;
       await updateKasaKaydi(kayit.id, {
+        ...(dagitim ? { dagitim } : {}),
         tarih: form.tarih,
         firma: firma.firma.trim(),
         // Older free-text records may stay unlinked; a picked company or employee links them.
@@ -95,6 +107,7 @@ export default function KayitDetayModal({
         bankaHesapId: secim.bankaHesapId || undefined,
         kartAciklama: secim.kartAciklama || undefined,
       });
+      if (dagitim) bildir(dagitimMesaji(dagitim, alinan, formatTL));
       onClose();
     } catch (err) {
       console.error(err);
