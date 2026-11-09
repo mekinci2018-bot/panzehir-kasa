@@ -52,9 +52,28 @@ export function donemKimligi(tur: MaasTuru, iso: string): string {
   return tur === "haftalik" ? `h${pazartesiOf(iso)}` : `a${iso.slice(0, 7)}`;
 }
 
-// Dönemin başladığı gün: hak ediş satırının tarihi.
+// Dönemin başladığı gün (dönem kimliğinin işaret ettiği gün).
 export function donemBasi(donem: string): string {
   return donem.startsWith("h") ? donem.slice(1) : `${donem.slice(1)}-01`;
+}
+
+// Hak edişin yazıldığı gün: **dönemin sonu** — haftalık dönemde Cumartesi (Pazartesi + 5), aylık
+// dönemde ayın son günü. Hak ediş satırının tarihi de bu gündür. Maaş, dönem bitmeden hak edilmiş
+// sayılmaz; eskiden dönemin **başında** yazılıyordu ve kalan hafta / ay başında erken şişiyordu.
+export function donemHakEdisGunu(donem: string): string {
+  if (donem.startsWith("h")) return gunEkle(donem.slice(1), 5);
+  const [yil, ay] = donem.slice(1).split("-").map(Number);
+  return isoOf(new Date(yil, ay, 0)); // ayın son günü (ay 1-tabanlı, gün 0 → önceki ayın sonu)
+}
+
+export function donemBittiMi(donem: string, bugun: string): boolean {
+  return donemHakEdisGunu(donem) <= bugun;
+}
+
+// Bir dönem öncesi. Dönem kimlikleri aynı türden olduğu sürece sözlük sırası tarih sırasıdır
+// ("h2026-11-02" > "h2026-10-26", "a2026-11" > "a2026-09"), bu yüzden karşılaştırmalar düz string.
+function oncekiDonem(donem: string): string {
+  return donem.startsWith("h") ? `h${gunEkle(donem.slice(1), -7)}` : `a${shiftMonthKey(donem.slice(1), -1)}`;
 }
 
 export function donemEtiketi(donem: string): string {
@@ -81,29 +100,38 @@ function devredenTarihiOf(c: Calisan): string | undefined {
   return c.devredenTarihi?.trim() ? c.devredenTarihi : undefined;
 }
 
-// Hak edişi yazılması gereken dönemler, eskiden yeniye. Başlangıç devreden tarihi; yoksa yalnızca
-// bugünün dönemi (ne zamandan beri çalıştığı bilinmediği için geriye dönük tamamlama yapılmaz).
-// Devreden tarihi bir dönemin ortasındaysa o dönem devredene dahil sayılır ve yazılmaz.
+// Hak edişi yazılması gereken dönemler, eskiden yeniye.
+//
+// En yeni dönem **son biten** dönemdir: bugünün dönemi henüz bitmediyse (haftalıkta Cumartesi'ye,
+// aylıkta ayın son gününe gelinmediyse) bir öncesi alınır. Süren dönemin maaşı yazılmaz.
+//
+// Başlangıç devreden tarihinden sonraki ilk dönem; devreden tarihi bir dönemin ortasındaysa o dönem
+// devredene dahil sayılır ve yazılmaz. Devreden tarihi yoksa yalnızca son biten dönem yazılır (ne
+// zamandan beri çalıştığı bilinmediği için geriye dönük tamamlama yapılmaz).
 export function uretilecekDonemler(c: Calisan, bugun: string): string[] {
   if (c.pasif || !c.maasTutari || c.maasTutari <= 0) return [];
   const devreden = devredenTarihiOf(c);
   // Devreden tarihi ileriye dönükse hak ediş henüz başlamamıştır.
   if (devreden && devreden > bugun) return [];
+  const haftalik = maasTuru(c) === "haftalik";
 
-  const donemler: string[] = [];
-  if (maasTuru(c) === "haftalik") {
-    let ilk = pazartesiOf(devreden ?? bugun);
-    if (devreden && ilk < devreden) ilk = gunEkle(ilk, 7);
-    for (let gun = pazartesiOf(bugun), i = 0; i < EN_FAZLA_HAFTA && gun >= ilk; i++, gun = gunEkle(gun, -7)) {
-      donemler.push(`h${gun}`);
-    }
-  } else {
-    let ilkAy = (devreden ?? bugun).slice(0, 7);
-    if (devreden && !devreden.endsWith("-01")) ilkAy = shiftMonthKey(ilkAy, 1);
-    for (let ay = bugun.slice(0, 7), i = 0; i < EN_FAZLA_AY && ay >= ilkAy; i++, ay = shiftMonthKey(ay, -1)) {
-      donemler.push(`a${ay}`);
+  let son = haftalik ? `h${pazartesiOf(bugun)}` : `a${bugun.slice(0, 7)}`;
+  if (!donemBittiMi(son, bugun)) son = oncekiDonem(son);
+
+  let ilk = son;
+  if (devreden) {
+    if (haftalik) {
+      const pazartesi = pazartesiOf(devreden);
+      ilk = `h${pazartesi < devreden ? gunEkle(pazartesi, 7) : pazartesi}`;
+    } else {
+      const ay = devreden.slice(0, 7);
+      ilk = `a${devreden.endsWith("-01") ? ay : shiftMonthKey(ay, 1)}`;
     }
   }
+
+  const donemler: string[] = [];
+  const enFazla = haftalik ? EN_FAZLA_HAFTA : EN_FAZLA_AY;
+  for (let d = son, i = 0; i < enFazla && d >= ilk; i++, d = oncekiDonem(d)) donemler.push(d);
   return donemler.reverse();
 }
 
@@ -113,28 +141,31 @@ export function eksikDonemler(c: Calisan, hareketler: PersonelHareketi[], bugun:
   return uretilecekDonemler(c, bugun).filter((d) => !varOlan.has(d));
 }
 
-export type HakEdisDurum = "islendi" | "devredene-dahil" | "eksik" | "yok";
+export type HakEdisDurum = "islendi" | "devredene-dahil" | "surmekte" | "eksik" | "yok";
 
 // Bu dönemin durumu. Hep `uretilecekDonemler`e bakar, bu yüzden ekranda yazan ile yazılacak hak
 // ediş birbirinden kopamaz:
-//   islendi         — bu dönemin hak edişi yazılı
+//   islendi         — bu dönem bitti ve hak edişi yazılı
+//   surmekte        — dönem henüz bitmedi; maaşı dönem sonunda (Cumartesi / ayın son günü) yazılacak
 //   devredene-dahil — devreden tarihi bu dönemin içinde, maaşı devreden alacağın içinde sayılıyor
-//   eksik           — yazılması gerekiyor ("şimdi işle" gerçekten bir şey yazar)
+//   eksik           — yazılması gereken (bitmiş) bir dönem var; "şimdi işle" gerçekten bir şey yazar
 //   yok             — pasif ya da maaş tutarı girilmemiş
 //
-// Eskiden burada yalnızca "bu dönemin kaydı var mı?" sorulduğu için devredene dahil dönemler
-// "işlenmedi" görünüyor, "şimdi işle" düğmesi de sessizce hiçbir şey yapmıyordu.
+// `eksikler` **bitmiş** dönemlerdir, bu yüzden süren dönem hiçbir zaman eksik sayılmaz. Eskiden
+// burada yalnızca "bu dönemin kaydı var mı?" sorulduğu için devredene dahil dönemler "işlenmedi"
+// görünüyor, "şimdi işle" düğmesi de sessizce hiçbir şey yapmıyordu.
 export function hakEdisDurumu(
   c: Calisan,
   hareketler: PersonelHareketi[],
   bugun: string
-): { durum: HakEdisDurum; eksik: number } {
-  if (c.pasif || !c.maasTutari || c.maasTutari <= 0) return { durum: "yok", eksik: 0 };
+): { durum: HakEdisDurum; eksikler: string[] } {
+  if (c.pasif || !c.maasTutari || c.maasTutari <= 0) return { durum: "yok", eksikler: [] };
   const donem = donemKimligi(maasTuru(c), bugun);
   const eksikler = eksikDonemler(c, hareketler, bugun);
-  if (eksikler.includes(donem)) return { durum: "eksik", eksik: eksikler.length };
+  if (!donemBittiMi(donem, bugun)) return { durum: "surmekte", eksikler };
+  if (eksikler.includes(donem)) return { durum: "eksik", eksikler };
   const yazili = hareketler.some((h) => h.personelId === c.id && h.donem === donem);
-  return { durum: yazili ? "islendi" : "devredene-dahil", eksik: eksikler.length };
+  return { durum: yazili ? "islendi" : "devredene-dahil", eksikler };
 }
 
 // ---- Ekstre ----

@@ -3,12 +3,13 @@
 import { useEffect, useRef } from "react";
 import { useCalisanlar, usePersonelHareketleri } from "@/lib/hooks";
 import { hakEdisYaz } from "@/lib/db";
-import { donemBasi, eksikDonemler, maasTuru } from "@/lib/personel";
+import { donemHakEdisGunu, eksikDonemler, maasTuru } from "@/lib/personel";
 import { todayISO } from "@/lib/format";
 import { bildir } from "./Bildirim";
 
-// Otomatik maaş hak edişi: haftalık personele her Pazartesi, aylık personele her ayın 1'inde maaş
-// tutarı hak ediş olarak yazılır. Uygulama açıldığında eksik dönemler tamamlanır.
+// Otomatik maaş hak edişi **dönem sonunda** yazılır: haftalık personele Cumartesi, aylık personele
+// ayın son günü. Süren dönemin maaşı yazılmaz (kalan erken şişmesin). Uygulama açıldığında bitmiş
+// ama yazılmamış dönemler tamamlanır.
 //
 // Belge kimliği `${personelId}_${donem}` olduğu için aynı dönem ikinci kez yazılamaz (iki cihaz aynı
 // anda açılsa da tek satır oluşur). Bu bileşen hiçbir şey çizmez; layout'ta duruyor, bu yüzden
@@ -33,7 +34,7 @@ export default function HakEdisOtomatik() {
         try {
           await hakEdisYaz(
             c.id,
-            donemler.map((d) => ({ donem: d, tarih: donemBasi(d), tutar: c.maasTutari! }))
+            donemler.map((d) => ({ donem: d, tarih: donemHakEdisGunu(d), tutar: c.maasTutari! }))
           );
           kisi += 1;
           donem += donemler.length;

@@ -4,7 +4,16 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Users, Plus, Clock, Wallet, Check, AlertTriangle, Pencil, EyeOff, RotateCcw, Trash2 } from "lucide-react";
 import { useBankaHesaplari, useCalisanlar, useKasaKayitlari, usePersonelHareketleri } from "@/lib/hooks";
-import { personelOzeti, hakEdisDurumu, maasTuru, MAAS_TURU_LABEL, eksikDonemler, donemBasi, type HakEdisDurum } from "@/lib/personel";
+import {
+  personelOzeti,
+  hakEdisDurumu,
+  maasTuru,
+  MAAS_TURU_LABEL,
+  eksikDonemler,
+  donemEtiketi,
+  donemHakEdisGunu,
+  type HakEdisDurum,
+} from "@/lib/personel";
 import { deleteCalisan, hakEdisYaz, personelOdemeYap, updateCalisan } from "@/lib/db";
 import { formatDate, formatTL, todayISO } from "@/lib/format";
 import type { Calisan, MaasTuru } from "@/lib/types";
@@ -63,7 +72,7 @@ export default function CalisanlarPage() {
     const donemler = eksikDonemler(c, hareketler, bugun);
     if (donemler.length === 0) return;
     try {
-      await hakEdisYaz(c.id, donemler.map((donem) => ({ donem, tarih: donemBasi(donem), tutar: c.maasTutari! })));
+      await hakEdisYaz(c.id, donemler.map((donem) => ({ donem, tarih: donemHakEdisGunu(donem), tutar: c.maasTutari! })));
     } catch (err) {
       console.error(err);
       alert("Hak ediş işlenemedi, lütfen tekrar deneyin.");
@@ -71,14 +80,14 @@ export default function CalisanlarPage() {
   }
 
   function satir(c: Calisan) {
-    const { durum, eksik } = hakEdisDurumu(c, hareketler, bugun);
+    const { durum, eksikler } = hakEdisDurumu(c, hareketler, bugun);
     return (
       <PersonelSatir
         key={c.id}
         calisan={c}
         ozet={ozetler.get(c.id)!}
         durum={durum}
-        eksikDonem={eksik}
+        eksikler={eksikler}
         silinebilir={silinebilirMi(c)}
         onDuzenle={() => setDuzenlenen(c)}
         onMesai={() => setMesaiFor(c)}
@@ -120,7 +129,7 @@ export default function CalisanlarPage() {
           <EmptyState
             icon={Users}
             title="Henüz personel eklenmedi"
-            description="'Yeni Personel' ile ad soyad, maaş türü ve tutarını girerek başla. Maaş hak edişi haftalık personelde her Pazartesi, aylık personelde her ayın 1'inde otomatik işlenir."
+            description="'Yeni Personel' ile ad soyad, maaş türü ve tutarını girerek başla. Maaş hak edişi dönem sonunda otomatik işlenir: haftalık personelde Cumartesi, aylık personelde ayın son günü."
           />
         </div>
       ) : (
@@ -198,7 +207,7 @@ function PersonelSatir({
   calisan,
   ozet,
   durum,
-  eksikDonem,
+  eksikler,
   silinebilir,
   onDuzenle,
   onMesai,
@@ -210,7 +219,7 @@ function PersonelSatir({
   calisan: Calisan;
   ozet: { kalan: number; sonOdemeTarihi?: string; sonOdemeTutari?: number };
   durum: HakEdisDurum;
-  eksikDonem: number;
+  eksikler: string[];
   silinebilir: boolean;
   onDuzenle: () => void;
   onMesai: () => void;
@@ -243,20 +252,30 @@ function PersonelSatir({
         )}
       </div>
 
-      {/* Uyarı yalnızca gerçekten yazılacak bir dönem varsa gösteriliyor; "devredene dahil"
-          dönemlerde eskiden kalıcı "işlenmedi" yazıyor, düğme de hiçbir şey yapmıyordu. */}
+      {/* Uyarı yalnızca gerçekten yazılacak (bitmiş) bir dönem varsa gösteriliyor. Süren dönem
+          "işlenmedi" sayılmaz: maaşı dönem sonunda yazılacak. */}
       <div className="order-3 basis-full md:order-2 md:basis-auto md:w-52 text-[11.5px]">
-        {eksikDonem > 0 ? (
+        {eksikler.length > 0 ? (
           <button
             className="inline-flex items-center gap-1 text-left text-[var(--accent-orange)] font-medium hover:underline"
             onClick={onEksikleriIsle}
+            title={`İşlenmemiş dönem: ${eksikler.map(donemEtiketi).join(", ")}`}
           >
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {donemAdi} işlenmedi
-            {eksikDonem > 1 ? ` (${eksikDonem} dönem)` : ""} · şimdi işle
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            {eksikler.length > 1 ? `${eksikler.length} dönem işlenmedi` : "1 dönem işlenmedi"} · şimdi işle
           </button>
         ) : durum === "islendi" ? (
           <span className="inline-flex items-center gap-1 text-[var(--accent-green)]">
             <Check className="w-3.5 h-3.5 shrink-0" /> {donemAdi} işlendi
+          </span>
+        ) : durum === "surmekte" ? (
+          <span
+            className="text-[var(--muted)]"
+            title={`Maaş dönem sonunda hak edilmiş sayılıyor; ${
+              tur === "haftalik" ? "bu haftanın hak edişi Cumartesi" : "bu ayın hak edişi ayın son günü"
+            } yazılacak`}
+          >
+            {donemAdi} sürüyor · {tur === "haftalik" ? "Cumartesi" : "ay sonunda"} işlenir
           </span>
         ) : durum === "devredene-dahil" ? (
           <span className="text-[var(--muted-soft)]" title="Devreden alacak bu dönemin içinde girildiği için maaşı ayrıca yazılmıyor">

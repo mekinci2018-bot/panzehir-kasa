@@ -1,6 +1,8 @@
 # Devam notları
 
-Son güncelleme: 09.11.2026 (Personel sayfasının düzeni yenilendi; 06.11'deki hak ediş düzeltmesi de notlara işlendi)
+Son güncelleme: 09.11.2026 (hak ediş artık dönem sonunda yazılıyor; Personel sayfasının düzeni yenilendi; 06.11'deki hak ediş düzeltmesi de notlara işlendi)
+
+**Bekleyen tek adım:** `node scripts/hakedis-bitmemis-donem.mjs` kuru çalıştırması onaylandıktan sonra `--yaz` ile çalıştırılacak (eski kuralla yazılmış, dönemi bitmemiş hak ediş satırlarının silinmesi).
 
 ## ⚠️ Ev bilgisayarına geçerken
 
@@ -9,6 +11,23 @@ Son güncelleme: 09.11.2026 (Personel sayfasının düzeni yenilendi; 06.11'deki
 Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
 
 ## 09.11.2026'da yapılanlar
+
+### Hak ediş artık dönem SONUNDA yazılıyor (kural değişikliği, commit edildi)
+
+**Önce çift sayım arandı, bulunamadı.** `scripts/hakedis-devreden-temizle.mjs` (yeni, salt okuma; devreden tutarıyla çakışan otomatik hak edişleri A/B/C kümelerine ayırıp listeler, `--yaz` ile siler) kuru çalıştırmada **hiç bulgu vermedi** — devreden ile hak ediş çakışması yok, `--yaz` hiç çalıştırılmadı. Betik duruyor: devreden tarihi sonradan değiştirilirse aynı kontrol tekrar gerekebilir.
+
+**Gerçek sorun kural.** Hak ediş dönemin **başında** yazılıyordu (haftalıkta Pazartesi, aylıkta ayın 1'i), yani henüz çalışılmamış dönemin maaşı anında borç görünüyordu; kalan her hafta / ay başında erken şişiyordu. Yeni kural: **hak ediş dönem bitince yazılır** — haftalık dönemde **Cumartesi**, aylık dönemde **ayın son günü**. Satırın tarihi de artık o gün.
+
+- Yeni `donemHakEdisGunu(donem)`: haftalıkta Pazartesi + 5 (Cumartesi), aylıkta ayın son günü (`new Date(yıl, ay, 0)`). Yanında `donemBittiMi(donem, bugün)`. **Dönem kimlikleri değişmedi** (`h<pazartesi>` / `a<yıl-ay>`), yani mevcut satırlar ve belge kimlikleri olduğu gibi geçerli; değişen yalnızca "ne zaman yazılır" ve satırın tarihi. Dönem etiketi de aynı kaldı (hafta Pazartesi–Pazar olarak yazılıyor; hak ediş günü Cumartesi).
+- `uretilecekDonemler()` yeniden yazıldı: en yeni dönem artık **son biten** dönem (bugünün dönemi bitmediyse bir öncesi). Devreden sınırı aynen korundu — devreden tarihinden sonraki ilk dönemden başlıyor, devreden tarihinin içine düştüğü dönem devredene dahil sayılıyor. 26 hafta / 12 ay sınırı da bugünden geriye sayılmaya devam ediyor. Dönem karşılaştırmaları düz string (aynı türden kimliklerde sözlük sırası = tarih sırası); yeni küçük yardımcı `oncekiDonem()`.
+- **Devreden tarihi olmayan personelde değişiklik:** eskiden "bugünün dönemi", şimdi "son biten dönem" yazılıyor. Böylece uygulama hafta içi açıldığında da son biten hafta yazılabiliyor — kural "yalnızca Cumartesi/Pazar açılırsa yazılır" hâline gelmiyor.
+- **Gösterge yeni kurala uydu:** `HakEdisDurum`'a **`surmekte`** eklendi. Personel satırında artık "Bu hafta sürüyor · Cumartesi işlenir" / "Bu ay sürüyor · ay sonunda işlenir" yazıyor (tam açıklama `title`'da). Süren dönem hiçbir zaman "işlenmedi" sayılmıyor, çünkü `eksikler` yalnızca **bitmiş** dönemlerden oluşuyor.
+- `hakEdisDurumu()` artık `{ durum, eksikler: string[] }` döndürüyor (eskiden `eksik: number`). Uyarı etiketi de değişti: "Bu hafta işlenmedi" yerine **"N dönem işlenmedi · şimdi işle"**, `title`'da dönemlerin etiketleri — yeni kuralda eksik dönemler her zaman geçmiş dönemler olduğu için "bu hafta" demek yanlış olurdu.
+- Yardımcı metinler güncellendi: `PersonelFormModal` devreden tarihi açıklaması, Personel sayfası boş durum metni, `HakEdisOtomatik` başlık yorumu.
+
+**Temizlik betiği:** yeni `scripts/hakedis-bitmemis-donem.mjs` — eski kuralla yazılmış, **dönemi henüz bitmemiş** otomatik hak edişleri (bu hafta ve Kasım) listeler; varsayılan kuru çalıştırma, `--yaz` ile siler, her çalıştırmada `personelHareketleri` + `calisanlar` yedeği alır, sonunda doğrulama yapar. Silinen dönemler kaybolmuyor: dönem bitince uygulama onları doğru tarihle yeniden yazıyor. Dönemi bitmiş ama tarihi dönem başında kalmış eski satırları **saymakla yetiniyor, dokunmuyor** (tutarlar ve kalan doğru; yalnızca ekstredeki satır tarihi eski kuralda kalıyor — istenirse ayrı bir adımda düzeltilir).
+
+**45 birim kontrolü** çalıştırıldı ve hepsi geçti: hak ediş günü (Cumartesi / ay sonu, artık yıl Şubatı, yıl sonu haftası), dönem bitti mi (Pazartesi–Cuma hayır, Cumartesi–Pazar evet; ay ortası hayır, ayın son günü evet), süren dönemin üretilmemesi, devreden sınırının korunması (hafta/ay ortası, dönem başıyla aynı gün, süren dönemin içinde, ileri tarihli), devreden tarihsiz personelde son biten dönem, 26/12 sınırı, beş durum göstergesinin tamamı ve silinen bitmemiş dönemin tekrar üretilmemesi. `tsc --noEmit`, `eslint` ve `npm run build` temiz.
 
 ### Personel sayfasının düzeni: iki bölüm, tek sütun uzun satır (doğrudan commit edildi — kullanıcı isteği; localhost'ta gösterilmedi, yalnızca `tsc` / `eslint` / `build` temiz)
 

@@ -102,8 +102,8 @@ export default function PersonelFormModal({
           />
           <p className="text-[11px] text-[var(--muted)] mt-1">
             {devredenTutar
-              ? "Otomatik maaş hak edişi bu tarihten sonraki dönemler için işlenir; bu tarih ve öncesi devreden tutara dahil sayılır."
-              : "Devreden alacak girilmediyse tarih gerekmez. Otomatik hak ediş bu durumda bulunduğumuz dönemden başlar."}
+              ? "Otomatik maaş hak edişi bu tarihten sonraki dönemler için, her dönemin sonunda (haftalıkta Cumartesi, aylıkta ayın son günü) işlenir; bu tarih ve öncesi devreden tutara dahil sayılır."
+              : "Devreden alacak girilmediyse tarih gerekmez. Otomatik hak ediş bu durumda son biten dönemden başlar (haftalıkta Cumartesi, aylıkta ayın son günü işlenir)."}
           </p>
         </div>
 
