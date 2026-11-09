@@ -7,7 +7,7 @@ import { useBankaHesaplari, useCalisanlar, useKasaKayitlari, usePersonelHareketl
 import { personelOzeti, hakEdisDurumu, maasTuru, MAAS_TURU_LABEL, eksikDonemler, donemBasi, type HakEdisDurum } from "@/lib/personel";
 import { deleteCalisan, hakEdisYaz, personelOdemeYap, updateCalisan } from "@/lib/db";
 import { formatDate, formatTL, todayISO } from "@/lib/format";
-import type { Calisan } from "@/lib/types";
+import type { Calisan, MaasTuru } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import YukleniyorSatiri from "@/components/YukleniyorSatiri";
@@ -34,7 +34,15 @@ export default function CalisanlarPage() {
 
   const aktifler = calisanlar.filter((c) => !c.pasif);
   const pasifler = calisanlar.filter((c) => c.pasif);
-  const personelBorcu = aktifler.reduce((s, c) => s + Math.max(0, ozetler.get(c.id)?.kalan ?? 0), 0);
+  const odenecek = (liste: Calisan[]) => liste.reduce((s, c) => s + Math.max(0, ozetler.get(c.id)?.kalan ?? 0), 0);
+  const personelBorcu = odenecek(aktifler);
+
+  // Haftalık üstte, aylık altta. maasTuru() olmayan eski kayıtlar "aylık" sayılır, bu yüzden iki
+  // bölümün toplamı her zaman aktif personelin tamamıdır.
+  const bolumler: { tur: MaasTuru; kisiler: Calisan[] }[] = [
+    { tur: "haftalik", kisiler: aktifler.filter((c) => maasTuru(c) === "haftalik") },
+    { tur: "aylik", kisiler: aktifler.filter((c) => maasTuru(c) === "aylik") },
+  ];
 
   // Geçmişi olan personel silinmez, yalnızca pasife alınır (firma silmedeki kuralla aynı).
   function silinebilirMi(c: Calisan) {
@@ -60,6 +68,26 @@ export default function CalisanlarPage() {
       console.error(err);
       alert("Hak ediş işlenemedi, lütfen tekrar deneyin.");
     }
+  }
+
+  function satir(c: Calisan) {
+    const { durum, eksik } = hakEdisDurumu(c, hareketler, bugun);
+    return (
+      <PersonelSatir
+        key={c.id}
+        calisan={c}
+        ozet={ozetler.get(c.id)!}
+        durum={durum}
+        eksikDonem={eksik}
+        silinebilir={silinebilirMi(c)}
+        onDuzenle={() => setDuzenlenen(c)}
+        onMesai={() => setMesaiFor(c)}
+        onOdeme={() => setOdemeFor(c)}
+        onPasif={() => updateCalisan(c.id, { pasif: !c.pasif })}
+        onSil={() => sil(c)}
+        onEksikleriIsle={() => eksikleriIsle(c)}
+      />
+    );
   }
 
   return (
@@ -97,47 +125,20 @@ export default function CalisanlarPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {aktifler.map((c) => (
-              <PersonelKarti
-                key={c.id}
-                calisan={c}
-                ozet={ozetler.get(c.id)!}
-                durum={hakEdisDurumu(c, hareketler, bugun).durum}
-                eksikDonem={hakEdisDurumu(c, hareketler, bugun).eksik}
-                silinebilir={silinebilirMi(c)}
-                onDuzenle={() => setDuzenlenen(c)}
-                onMesai={() => setMesaiFor(c)}
-                onOdeme={() => setOdemeFor(c)}
-                onPasif={() => updateCalisan(c.id, { pasif: !c.pasif })}
-                onSil={() => sil(c)}
-                onEksikleriIsle={() => eksikleriIsle(c)}
-              />
+          {bolumler
+            .filter((b) => b.kisiler.length > 0)
+            .map((b) => (
+              <section key={b.tur} className="flex flex-col gap-2.5">
+                <BolumBasligi baslik={`${MAAS_TURU_LABEL[b.tur]} Personel`} kisi={b.kisiler.length} toplam={odenecek(b.kisiler)} />
+                {b.kisiler.map(satir)}
+              </section>
             ))}
-          </div>
 
           {pasifler.length > 0 && (
-            <div className="flex flex-col gap-3">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Pasif personel</h2>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {pasifler.map((c) => (
-                  <PersonelKarti
-                    key={c.id}
-                    calisan={c}
-                    ozet={ozetler.get(c.id)!}
-                    durum="yok"
-                    eksikDonem={0}
-                    silinebilir={silinebilirMi(c)}
-                    onDuzenle={() => setDuzenlenen(c)}
-                    onMesai={() => setMesaiFor(c)}
-                    onOdeme={() => setOdemeFor(c)}
-                    onPasif={() => updateCalisan(c.id, { pasif: !c.pasif })}
-                    onSil={() => sil(c)}
-                    onEksikleriIsle={() => {}}
-                  />
-                ))}
-              </div>
-            </div>
+            <section className="flex flex-col gap-2.5 opacity-65">
+              <BolumBasligi baslik="Pasif personel" kisi={pasifler.length} />
+              {pasifler.map(satir)}
+            </section>
           )}
         </>
       )}
@@ -177,7 +178,23 @@ export default function CalisanlarPage() {
   );
 }
 
-function PersonelKarti({
+function BolumBasligi({ baslik, kisi, toplam }: { baslik: string; kisi: number; toplam?: number }) {
+  return (
+    <h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
+      {baslik} · {kisi} kişi
+      {toplam !== undefined && (
+        <>
+          {" · "}Ödenecek <span className="tabular text-[var(--foreground)]">{formatTL(toplam)}</span>
+        </>
+      )}
+    </h2>
+  );
+}
+
+// Tam genişlikte tek satır. Geniş ekranda soldan sağa: ad soyad · son ödeme · işlenme durumu ·
+// Kalan · butonlar. Telefonda `order` ile kırılıyor — ilk satırda ad soyad ve Kalan, altında son
+// ödeme, işlenme durumu ve butonlar; tek DOM, ayrı bir mobil render yok.
+function PersonelSatir({
   calisan,
   ozet,
   durum,
@@ -205,58 +222,41 @@ function PersonelKarti({
   const tur = maasTuru(calisan);
   const donemAdi = tur === "haftalik" ? "Bu hafta" : "Bu ay";
   return (
-    <div className={`card p-5 flex flex-col gap-3 ${calisan.pasif ? "opacity-70" : ""}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Link href={`/calisanlar/${calisan.id}`} className="font-semibold hover:underline underline-offset-2">
-            {calisan.adSoyad}
-          </Link>
-          <div className="text-xs text-[var(--muted)] mt-0.5">
-            {MAAS_TURU_LABEL[tur]} · {calisan.maasTutari ? formatTL(calisan.maasTutari) : "maaş tutarı girilmemiş"}
-            {calisan.mesaiSaatUcreti ? ` · mesai ${formatTL(calisan.mesaiSaatUcreti)}/saat` : ""}
-          </div>
-        </div>
-        <div className="flex items-start gap-2 shrink-0">
-          <div className="text-right">
-            <div className="text-[10.5px] uppercase tracking-[0.1em] text-[var(--muted)]">Kalan</div>
-            <div className={`tabular text-[19px] font-semibold ${ozet.kalan > 0.005 ? "text-[var(--accent-orange)]" : ""}`}>
-              {formatTL(ozet.kalan)}
-            </div>
-          </div>
-          <SatirMenu
-            ogeler={[
-              { label: "Düzenle", icon: Pencil, onClick: onDuzenle },
-              {
-                label: calisan.pasif ? "Aktif yap" : "Pasif yap",
-                icon: calisan.pasif ? RotateCcw : EyeOff,
-                onClick: onPasif,
-              },
-              ...(silinebilir
-                ? [{ label: "Sil", icon: Trash2, onClick: onSil, tehlikeli: true }]
-                : []),
-            ]}
-          />
+    <div className="card px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2.5">
+      <div className="order-1 min-w-0 flex-1">
+        <Link href={`/calisanlar/${calisan.id}`} className="font-semibold hover:underline underline-offset-2">
+          {calisan.adSoyad}
+        </Link>
+        <div className="text-[11.5px] text-[var(--muted)] mt-0.5">
+          {MAAS_TURU_LABEL[tur]} · {calisan.maasTutari ? formatTL(calisan.maasTutari) : "maaş tutarı girilmemiş"}
+          {calisan.mesaiSaatUcreti ? ` · mesai ${formatTL(calisan.mesaiSaatUcreti)}/saat` : ""}
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-[var(--muted)]">
+      <div className="order-3 basis-full md:order-2 md:basis-auto md:w-44 text-[11.5px] text-[var(--muted)]">
         {ozet.sonOdemeTarihi ? (
-          <span>
+          <>
             Son ödeme {formatDate(ozet.sonOdemeTarihi)} · <b className="tabular">{formatTL(ozet.sonOdemeTutari ?? 0)}</b>
-          </span>
+          </>
         ) : (
-          <span>Henüz ödeme yapılmadı</span>
+          "Henüz ödeme yapılmadı"
         )}
-        {/* Uyarı yalnızca gerçekten yazılacak bir dönem varsa gösteriliyor; "devredene dahil"
-            dönemlerde eskiden kalıcı "işlenmedi" yazıyor, düğme de hiçbir şey yapmıyordu. */}
+      </div>
+
+      {/* Uyarı yalnızca gerçekten yazılacak bir dönem varsa gösteriliyor; "devredene dahil"
+          dönemlerde eskiden kalıcı "işlenmedi" yazıyor, düğme de hiçbir şey yapmıyordu. */}
+      <div className="order-3 basis-full md:order-2 md:basis-auto md:w-52 text-[11.5px]">
         {eksikDonem > 0 ? (
-          <button className="inline-flex items-center gap-1 text-[var(--accent-orange)] font-medium hover:underline" onClick={onEksikleriIsle}>
-            <AlertTriangle className="w-3.5 h-3.5" /> {donemAdi} işlenmedi
+          <button
+            className="inline-flex items-center gap-1 text-left text-[var(--accent-orange)] font-medium hover:underline"
+            onClick={onEksikleriIsle}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {donemAdi} işlenmedi
             {eksikDonem > 1 ? ` (${eksikDonem} dönem)` : ""} · şimdi işle
           </button>
         ) : durum === "islendi" ? (
           <span className="inline-flex items-center gap-1 text-[var(--accent-green)]">
-            <Check className="w-3.5 h-3.5" /> {donemAdi} işlendi
+            <Check className="w-3.5 h-3.5 shrink-0" /> {donemAdi} işlendi
           </span>
         ) : durum === "devredene-dahil" ? (
           <span className="text-[var(--muted-soft)]" title="Devreden alacak bu dönemin içinde girildiği için maaşı ayrıca yazılmıyor">
@@ -265,7 +265,14 @@ function PersonelKarti({
         ) : null}
       </div>
 
-      <div className="flex gap-2">
+      <div className="order-2 md:order-3 shrink-0 text-right md:w-32">
+        <div className="text-[10.5px] uppercase tracking-[0.1em] text-[var(--muted)]">Kalan</div>
+        <div className={`tabular text-[19px] font-semibold ${ozet.kalan > 0.005 ? "text-[var(--accent-orange)]" : ""}`}>
+          {formatTL(ozet.kalan)}
+        </div>
+      </div>
+
+      <div className="order-4 basis-full md:basis-auto flex flex-wrap items-center gap-2 md:ml-auto">
         <button className="btn-primary !py-1.5 !px-3 !text-xs inline-flex items-center gap-1.5" onClick={onOdeme}>
           <Wallet className="w-3.5 h-3.5" /> Ödeme Yap
         </button>
@@ -275,6 +282,17 @@ function PersonelKarti({
         <Link href={`/calisanlar/${calisan.id}`} className="btn-secondary !py-1.5 !px-3 !text-xs">
           Ekstre
         </Link>
+        <SatirMenu
+          ogeler={[
+            { label: "Düzenle", icon: Pencil, onClick: onDuzenle },
+            {
+              label: calisan.pasif ? "Aktif yap" : "Pasif yap",
+              icon: calisan.pasif ? RotateCcw : EyeOff,
+              onClick: onPasif,
+            },
+            ...(silinebilir ? [{ label: "Sil", icon: Trash2, onClick: onSil, tehlikeli: true }] : []),
+          ]}
+        />
       </div>
     </div>
   );

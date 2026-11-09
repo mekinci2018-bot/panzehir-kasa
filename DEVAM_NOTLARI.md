@@ -1,6 +1,6 @@
 # Devam notları
 
-Son güncelleme: 06.11.2026 (Aşama 3 ve Genel Durum'un sadeleşmesi bitti; plandaki bütün aşamalar tamam)
+Son güncelleme: 09.11.2026 (Personel sayfasının düzeni yenilendi; 06.11'deki hak ediş düzeltmesi de notlara işlendi)
 
 ## ⚠️ Ev bilgisayarına geçerken
 
@@ -8,7 +8,38 @@ Son güncelleme: 06.11.2026 (Aşama 3 ve Genel Durum'un sadeleşmesi bitti; plan
 
 Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
 
+## 09.11.2026'da yapılanlar
+
+### Personel sayfasının düzeni: iki bölüm, tek sütun uzun satır (doğrudan commit edildi — kullanıcı isteği; localhost'ta gösterilmedi, yalnızca `tsc` / `eslint` / `build` temiz)
+
+06.11'deki hak ediş düzeltmesinden sonra yarım kalan iş.
+
+- **İki bölüm:** üstte **Haftalık Personel**, altta **Aylık Personel**; bölüm başlığında kişi sayısı ve o bölümün ödenecek toplamı ("Haftalık Personel · 6 kişi · Ödenecek ₺51.910"). Pasif personel en altta, ayrı bölüm ve soluk (`opacity-65`), toplamı yazılmıyor. `maasTuru()` olmayan eski kayıtlar "aylık" sayıldığı için iki bölümün toplamı her zaman aktif personelin tamamı.
+- **Tek sütun, uzun satır:** iki sütunlu kart düzeni (`lg:grid-cols-2`) kalktı; her personel tam genişlikte tek satır. Soldan sağa: Ad Soyad (altında küçük "Haftalık · ₺19.650 · mesai ₺…/saat") · Son ödeme · işlenme durumu · **Kalan** (vurgulu, sağa hizalı) · Ödeme Yap, Mesai Ekle, Ekstre, `⋯`.
+- **Telefonda** satır `order` ile kırılıyor: ilk satırda ad soyad ile Kalan, altında son ödeme, işlenme durumu ve butonlar. Alacaklar / Borçlar'daki `md:hidden` + `hidden md:flex` deseninin aksine **ayrı bir mobil render yazılmadı** — satır tek parça olduğu için tek DOM yetiyor, kopya markup riski yok.
+- Ad soyada tıklayınca ekstre açılıyor (eskiden de öyleydi, korundu). `PersonelKarti` → `PersonelSatir`, yanında küçük `BolumBasligi`.
+- `hakEdisDurumu()` artık satır başına **bir kez** çağrılıyor (eskiden aynı hesap iki kez yapılıyordu).
+
+`tsc --noEmit`, `eslint` ve `npm run build` temiz.
+
+### Bekleyen işlerden iki madde çıkarıldı (kullanıcı kararı)
+
+**Drive client secret yenileme** ve **PIN değiştirme** maddeleri listeden çıkarıldı; yapılmayacak.
+
 ## 06.11.2026'da yapılanlar (iş bilgisayarında)
+
+### Hak ediş düzeltmesi: eksik dönemler artık gerçekten işleniyor (commit `a469232`)
+
+Personel sayfasında birçok kişide kalıcı olarak "Bu hafta / bu ay işlenmedi" yazıyordu, "şimdi işle" düğmesi de hiçbir şey yazmıyordu. İki ayrı hata:
+
+- `lib/personel.ts` içindeki geriye dönük tamamlama sınırı (26 hafta / 12 ay) **başlangıç** tarihinden sayılıyordu. Devreden tarihi sınırdan eskiyse üretilen dönemler bugüne hiç ulaşmıyor, yani bu haftanın / bu ayın hak edişi hiç yazılmıyordu. Sınır artık **bugünden geriye** sayılıyor; bugünün dönemi her zaman üretiliyor (yeni `uretilecekDonemler()`).
+- Ekranda gösterilen durum ile yazılan hak ediş ayrı yerlerden okunuyordu: `buDonemIslendi()` yalnızca "bu dönemin kaydı var mı?" diye soruyordu, ama devreden tarihi dönem ortasındaysa o dönem bilinçli olarak devredene dahil sayılıp yazılmıyor — o personeller sonsuza kadar "işlenmedi" görüyordu. Yerine `hakEdisDurumu()` geldi; hep `uretilecekDonemler`e baktığı için ekranda yazan ile yazılacak olan kopamıyor. Dört durum: **işlendi / devredene-dahil / eksik / yok**. Uyarı yalnızca gerçekten yazılacak dönem varsa görünüyor, devredene dahil dönemlerde soluk "bu hafta devredene dahil" yazıyor.
+
+`HakEdisOtomatik` artık yazdığını söylüyor: "Maaş hak edişi işlendi · N personel · M dönem" (`bildir`) — maaş borcu kendiliğinden arttığında nedeni görünüyor.
+
+**Dikkat:** bu düzeltmeden sonraki ilk açılışta, devreden tarihi eski olan personelin eksik dönemleri (en fazla 26 hafta / 12 ay geriye) otomatik yazıldı; personel borcu buna bağlı olarak arttı. **Rakamlar kontrol edilmeli** — her hak ediş satırı personel ekstresinden düzenlenip silinebiliyor.
+
+39 birim kontrolü çalıştırıldı ve hepsi geçti (dönem kimliği ve başı, Pazartesi bulma, devreden tarihi yok / dönem ortasında / dönem başıyla aynı gün / ileri tarihli, sınırdan eski devreden tarihinde bugünün döneminin üretilmesi, yazılmış dönemin ikinci kez eksik sayılmaması, pasif / maaşsız, yıl sonu geçişi). `tsc --noEmit`, `eslint` ve `npm run build` temiz.
 
 ### Genel Durum sadeleşti: "Sipariş Durumu" (localhost'ta test edildi, onaylandı, commit edildi)
 
@@ -164,7 +195,7 @@ Sürekli ekranda duruyordu ve gerek kalmadı. `components/BugunAranacaklar.tsx` 
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
-**Durum (06.11.2026 akşamı): Aşama 2, 2B, 3, 4 ve Genel Durum'un sadeleşmesi bitti — plandaki bütün aşamalar tamam.** Sırada bekleyen bir aşama yok; geriye aşağıdaki "Bekleyen küçük işler" kaldı (client secret yenileme, PIN değiştirme, iki bilgisayardaki Firebase anahtar dosyası, Excel `.xlsx` yedeği).
+**Durum (09.11.2026): Aşama 2, 2B, 3, 4, Genel Durum'un sadeleşmesi ve Personel sayfasının yeni düzeni bitti — plandaki bütün aşamalar tamam.** Sırada bekleyen bir aşama yok; geriye aşağıdaki "Bekleyen küçük işler" kaldı (iki bilgisayardaki Firebase anahtar dosyası, Excel `.xlsx` yedeği). Client secret yenileme ve PIN değiştirme 09.11'de listeden çıkarıldı.
 
 ### Aşama 2B — Genel Durum · sonradan sadeleştirildi (06.11.2026)
 
@@ -300,7 +331,7 @@ Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki özgün plan karşıl
 ## Bekleyen küçük işler
 
 - **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
-- **Excel (.xlsx) yedeği:** gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenecek (`exceljs` zaten kurulu).
+- **Excel (.xlsx) yedeği:** gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenecek (`exceljs` zaten kurulu). Kod okunarak çıkarılan iki tuzak: (1) `exceljs` şu an **devDependency**, sunucuda çalışacağı için `dependencies`'e taşınmalı; (2) `yedekleriListele()` `panzehir-` ile başlayan her dosyayı görüyor — xlsx Ayarlar'daki **geri yükleme listesinden dışlanmalı** (geri yüklenebilir bir dosya değil) ama `temizle()`'nin 30 günlük budamasına girmeli. Sayfa önerisi: Kasa Kayıtları, Ödemeler ve Dağıtım (dizi alanları satır satır açılarak), Siparişler, Firmalar, Banka Hesapları, Personel, Personel Hareketleri.
 
 İsteğe bağlı, acil değil:
 
