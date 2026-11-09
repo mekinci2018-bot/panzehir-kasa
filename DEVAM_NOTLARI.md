@@ -1,8 +1,8 @@
 # Devam notları
 
-Son güncelleme: 09.11.2026 (hak ediş artık dönem sonunda yazılıyor; Personel sayfasının düzeni yenilendi; 06.11'deki hak ediş düzeltmesi de notlara işlendi)
+Son güncelleme: 09.11.2026 (hak ediş artık dönem sonunda yazılıyor, dönemi bitmemiş 11 satır silindi; Personel sayfasının düzeni yenilendi; 06.11'deki hak ediş düzeltmesi de notlara işlendi)
 
-**Bekleyen tek adım:** `node scripts/hakedis-bitmemis-donem.mjs` kuru çalıştırması onaylandıktan sonra `--yaz` ile çalıştırılacak (eski kuralla yazılmış, dönemi bitmemiş hak ediş satırlarının silinmesi).
+**Hak ediş tarafında bekleyen adım kalmadı:** `scripts/hakedis-bitmemis-donem.mjs --yaz` çalıştırıldı, eski kuralla yazılmış **11 bitmemiş dönem satırı silindi ve doğrulandı**. Sıradaki iş Excel (.xlsx) yedeği.
 
 ## ⚠️ Ev bilgisayarına geçerken
 
@@ -26,6 +26,8 @@ Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayr
 - Yardımcı metinler güncellendi: `PersonelFormModal` devreden tarihi açıklaması, Personel sayfası boş durum metni, `HakEdisOtomatik` başlık yorumu.
 
 **Temizlik betiği:** yeni `scripts/hakedis-bitmemis-donem.mjs` — eski kuralla yazılmış, **dönemi henüz bitmemiş** otomatik hak edişleri (bu hafta ve Kasım) listeler; varsayılan kuru çalıştırma, `--yaz` ile siler, her çalıştırmada `personelHareketleri` + `calisanlar` yedeği alır, sonunda doğrulama yapar. Silinen dönemler kaybolmuyor: dönem bitince uygulama onları doğru tarihle yeniden yazıyor. Dönemi bitmiş ama tarihi dönem başında kalmış eski satırları **saymakla yetiniyor, dokunmuyor** (tutarlar ve kalan doğru; yalnızca ekstredeki satır tarihi eski kuralda kalıyor — istenirse ayrı bir adımda düzeltilir).
+
+**Çalıştırıldı (09.11.2026):** kuru çalıştırma onaylandıktan sonra `--yaz` ile **11 satır silindi**, betiğin doğrulaması temiz çıktı. Silinenler bu haftanın (`h2026-11-09`, Cumartesi 14.11'de yeniden yazılacak) ve Kasım'ın (`a2026-11`, 30.11'de yazılacak) hak ediş satırlarıydı; personel kalanları bu kadar düştü. Silme öncesi yedek `import/` klasöründe duruyor (git'e girmiyor).
 
 **45 birim kontrolü** çalıştırıldı ve hepsi geçti: hak ediş günü (Cumartesi / ay sonu, artık yıl Şubatı, yıl sonu haftası), dönem bitti mi (Pazartesi–Cuma hayır, Cumartesi–Pazar evet; ay ortası hayır, ayın son günü evet), süren dönemin üretilmemesi, devreden sınırının korunması (hafta/ay ortası, dönem başıyla aynı gün, süren dönemin içinde, ileri tarihli), devreden tarihsiz personelde son biten dönem, 26/12 sınırı, beş durum göstergesinin tamamı ve silinen bitmemiş dönemin tekrar üretilmemesi. `tsc --noEmit`, `eslint` ve `npm run build` temiz.
 
