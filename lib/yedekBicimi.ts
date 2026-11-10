@@ -76,3 +76,14 @@ export function yedekTarihi(dosyaAdi: string): string | null {
 export function tamYedekMi(dosyaAdi: string): boolean {
   return dosyaAdi.startsWith("panzehir-tam-yedek-");
 }
+
+// Okunabilir Excel yedeği, gece yedeğinin yanında: panzehir-tablo-2026-11-10.xlsx. Adı "panzehir-"
+// ile başlıyor ki 30 günlük budamaya girsin; geri yükleme listesinden tabloYedegiMi ile dışlanır.
+export function tabloDosyaAdi(ms: number): string {
+  const { tarih, saat } = trZaman(ms);
+  return `panzehir-tablo-${tarih}-${saat}.xlsx`;
+}
+
+export function tabloYedegiMi(dosyaAdi: string): boolean {
+  return dosyaAdi.startsWith("panzehir-tablo-");
+}

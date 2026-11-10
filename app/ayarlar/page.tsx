@@ -87,7 +87,9 @@ export default function AyarlarPage() {
           <h2 className="font-semibold">Yedek durumu</h2>
           <p className="text-xs text-[var(--muted)] mt-0.5">
             Her gece 03:00&apos;te Google Drive&apos;daki &ldquo;Panzehir Yedekler&rdquo; klasörüne görseller hariç yedek alınır; pazar
-            gecesi görseller dahil tam yedek de alınır. Son 30 günün yedekleri ve son 8 tam yedek saklanır.
+            gecesi görseller dahil tam yedek de alınır. Son 30 günün yedekleri ve son 8 tam yedek saklanır. Gece yedeğinin yanına
+            okunabilir bir Excel dosyası (<span className="tabular">panzehir-tablo-…xlsx</span>) da yazılır; o dosya okumak içindir,
+            geri yükleme listesinde görünmez.
           </p>
         </div>
         {loading ? (
@@ -135,7 +137,8 @@ export default function AyarlarPage() {
             onClick={() =>
               calistir({ tur: "yedek", metin: "Drive'a yedekleniyor…" }, async () => {
                 const s = await simdiYedekAl(gorsellerDahil);
-                return `Yedek Drive'a yüklendi: ${s.dosyalar?.join(", ")} (${boyutYaz(s.boyut ?? 0)})`;
+                const tablo = s.tablo ? ` Excel kopyası: ${s.tablo}` : s.tabloHatasi ? ` Excel kopyası yazılamadı: ${s.tabloHatasi}` : "";
+                return `Yedek Drive'a yüklendi: ${s.dosyalar?.join(", ")} (${boyutYaz(s.boyut ?? 0)})${tablo}`;
               })
             }
           >
@@ -260,6 +263,12 @@ function DurumSatiri({ baslik, sonuc }: { baslik: string; sonuc?: YedekSonucu })
             <span className="text-xs text-[var(--muted)] truncate max-w-[280px]" title={sonuc.hata ?? sonuc.dosyalar?.join(", ")}>
               {sonuc.basarili ? `${TUR_LABEL[sonuc.tur]} · ${boyutYaz(sonuc.boyut ?? 0)}` : sonuc.hata}
             </span>
+            {/* Excel kopyasının hatası yedeği başarısız yapmaz; sessiz kalmaması için burada görünür. */}
+            {sonuc.basarili && sonuc.tabloHatasi && (
+              <span className="text-xs text-[var(--brand)] shrink-0" title={sonuc.tabloHatasi}>
+                · Excel kopyası yazılamadı
+              </span>
+            )}
           </>
         )}
       </dd>

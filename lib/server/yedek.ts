@@ -7,6 +7,8 @@ import {
   GORSEL_KOLEKSIYONLARI,
   SISTEM_KOLEKSIYONU,
   YEDEK_UYGULAMA,
+  tabloDosyaAdi,
+  tabloYedegiMi,
   tamYedekMi,
   yedekDosyaAdi,
   yedekGrupAdi,
@@ -15,7 +17,10 @@ import {
   type YedekAdTuru,
   type YedekDosyasi,
 } from "../yedekBicimi";
+import { tabloOlustur } from "./yedekExcel";
 import type { YedekSonucu, YedekTuru } from "../types";
+
+const XLSX_TURU = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 const GUNLUK_SAKLAMA_GUN = 30;
 const TAM_SAKLAMA_ADET = 8;
@@ -52,6 +57,21 @@ async function durumYaz(sonuc: YedekSonucu) {
     );
 }
 
+// Yanına okunabilir .xlsx de yazılan yedekler: gece yedeği ve "Şimdi Yedek Al". Haftalık tam yedek
+// gece yedeğinin hemen ardından alınıyor (aynı veri), geri yükleme öncesi yedek ise okumak için
+// değil güvenlik için; ikisine tablo yazılmıyor.
+const tabloluMu = (tur: YedekTuru): boolean => tur === "gunluk" || tur === "elle";
+
+async function tablo(klasor: string, zaman: number, veri: YedekDosyasi): Promise<Partial<YedekSonucu>> {
+  try {
+    const dosya = await dosyaYukle(klasor, tabloDosyaAdi(zaman), await tabloOlustur(veri), XLSX_TURU);
+    return { tablo: dosya.name };
+  } catch (err) {
+    console.error("Excel yedeği yazılamadı", err);
+    return { tabloHatasi: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Takes a backup, uploads it, prunes old ones and records the outcome in sistem/yedek.
 export async function yedekAl(tur: YedekTuru, gorsellerDahil = tur === "tam" || tur === "elle-tam"): Promise<YedekSonucu> {
   const zaman = Date.now();
@@ -80,6 +100,9 @@ export async function yedekAl(tur: YedekTuru, gorsellerDahil = tur === "tam" || 
       basarili: true,
       dosyalar: yuklenen.map((d) => d.name),
       boyut: yuklenen.reduce((s, d) => s + d.size, 0),
+      // Okunabilir kopya yedeğin kendisi değil: hatası yedeği başarısız saymaz, yalnızca burada
+      // görünür. dosyalar / boyut'a girmez, çünkü geri yüklenebilir dosyalar onlar.
+      ...(tabloluMu(tur) ? await tablo(klasor, zaman, veri) : {}),
     };
     await durumYaz(sonuc);
     // Pruning problems must not mark a successful backup as failed.
@@ -96,6 +119,7 @@ export interface YedekGrubu {
   ad: string; // group name (parts merged)
   tarih: string | null;
   tam: boolean;
+  tablo: boolean; // okunabilir .xlsx: budamaya girer, geri yüklenemez
   boyut: number;
   olusturma: string;
   dosyalar: DriveDosyasi[]; // parts in order
@@ -106,7 +130,15 @@ export async function yedekleriListele(klasor?: string): Promise<YedekGrubu[]> {
   const gruplar = new Map<string, YedekGrubu>();
   for (const d of dosyalar) {
     const ad = yedekGrupAdi(d.name);
-    const g = gruplar.get(ad) ?? { ad, tarih: yedekTarihi(ad), tam: tamYedekMi(ad), boyut: 0, olusturma: d.createdTime, dosyalar: [] };
+    const g = gruplar.get(ad) ?? {
+      ad,
+      tarih: yedekTarihi(ad),
+      tam: tamYedekMi(ad),
+      tablo: tabloYedegiMi(ad),
+      boyut: 0,
+      olusturma: d.createdTime,
+      dosyalar: [],
+    };
     g.dosyalar.push(d);
     g.boyut += d.size;
     if (d.createdTime < g.olusturma) g.olusturma = d.createdTime;
@@ -142,6 +174,7 @@ function zamanGeriCevir(deger: unknown): unknown {
 export async function geriYukle(grupAdi: string): Promise<{ oncekiYedek: YedekSonucu; koleksiyonlar: Record<string, number> }> {
   const grup = (await yedekleriListele()).find((g) => g.ad === grupAdi);
   if (!grup) throw new Error("Yedek dosyası bulunamadı.");
+  if (grup.tablo) throw new Error("Excel dosyası okumak içindir, geri yüklenemez. JSON yedeklerinden birini seçin.");
 
   const parcalar = await Promise.all(grup.dosyalar.map((d) => dosyaIndir(d.id)));
   let ham = Buffer.concat(parcalar);

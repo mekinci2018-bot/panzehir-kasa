@@ -1,8 +1,10 @@
 # Devam notları
 
-Son güncelleme: 10.11.2026 (geçmiş dağıtım betiği bitti ve commit edildi; **kuru çalıştırma bekliyor**)
+Son güncelleme: 10.11.2026 (Excel yedeği yazıldı ve commit edildi; geçmiş dağıtım betiğinin **kuru çalıştırması hâlâ bekliyor**)
 
-**Sıradaki adım sende:** `node scripts/dagitim-gecmis.mjs` kuru çalıştırmasını kendi terminalinde çalıştır (PIN soruyor), çıktıyı birlikte okuyalım. Betik varsayılan olarak hiçbir şey yazmıyor. Ondan sonraki iş Excel (.xlsx) yedeği.
+**Sıradaki adım sende:** `node scripts/dagitim-gecmis.mjs` kuru çalıştırmasını kendi terminalinde çalıştır (PIN soruyor), çıktıyı birlikte okuyalım. Betik varsayılan olarak hiçbir şey yazmıyor.
+
+**İkinci adım sende:** Excel yedeği canlıda bir kez denenmeli — Ayarlar → **Şimdi Yedek Al** (görseller dahil işaretli DEĞİL). Sonuç mesajı `Excel kopyası: panzehir-tablo-….xlsx` diyorsa iş tamam; Drive'daki dosyayı açıp göz gezdir. Yerelde ortam değişkenleri olmadığı için bu yol çalıştırılamadı (dosyanın kendisi sentetik veriyle üretilip doğrulandı).
 
 ## ⚠️ Ev bilgisayarına geçerken
 
@@ -11,6 +13,25 @@ Son güncelleme: 10.11.2026 (geçmiş dağıtım betiği bitti ve commit edildi;
 Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
 
 ## 10.11.2026'da yapılanlar
+
+### Excel (.xlsx) yedeği: gece yedeğinin yanına okunabilir kopya (commit edildi, **canlıda denenmedi**)
+
+Yeni `lib/server/yedekExcel.ts` → `tabloOlustur(veri)`, yedeğin zaten bellekte olan verisinden bir çalışma kitabı üretiyor (ikinci bir Firestore okuması yok). `yedekAl` JSON'u yükledikten sonra `panzehir-tablo-<tarih>-<saat>.xlsx` adıyla aynı klasöre yüklüyor.
+
+**Dokuz sayfa:** Özet · Kasa Kayıtları · Ödemeler · Dağıtım · Siparişler · Firmalar · Banka Hesapları · Personel · Personel Hareketleri. Dizi alanları (`odemeler`, `dagitim`) kendi sayfalarında satır satır açılıyor, her satır kaynak kaydın numarasını taşıyor. Her sayfada başlık satırı donmuş, kalın, otomatik süzgeçli; para `#,##0.00`, tarihler `dd.mm.yyyy`, `createdAt` `dd.mm.yyyy hh:mm`.
+
+- **Kimlikler okunabilir hâle getiriliyor:** banka hesabı "Ziraat · Mustafa Ekinci", personel adı, sipariş "#57 EGESER · Tabela", dağıtım hedefi kasa kaydıysa "tarih · firma · açıklama". Bulunamayan kimlik `(bulunamayan sipariş excel-9)` olarak yazılıyor, sessizce boş kalmıyor.
+- **Hesaplanan kolonlar uygulamanın kendi fonksiyonlarından:** siparişte Ödenen / Kalan `siparisHesap` + `siparisOdemeleri`, kasa kaydında Kalan `kayitKalani`, Avans `avans`. İkinci bir hesap kopyası yazılmadı. Dağıtım toplamları **yalnızca silinmemiş kayıtlardan** hesaplanıyor — uygulamada da silinen kaydın dağıtımı geri alınmış sayılıyor.
+- **Silinen kayıtlar listede duruyor**, "Silindi" kolonundan ayrılıyor (çöp kutusundaki veriyi de görmek için).
+- **Tarih tuzağı:** exceljs tarihi mutlak zamandan okuyor (`getTime()`), bu yüzden gün başlangıcı `Date.UTC` ile kuruluyor; yerel saatle kurulsa +03 farkı bütün tarihleri bir gün geriye kaydırırdı. `createdAt` ise `trZaman` ile Türkiye duvar saatine çevrilip yazılıyor.
+
+**Notlardaki iki tuzak da kapatıldı:** `exceljs` `dependencies`'e taşındı (`package-lock.json` yenilendi) ve xlsx **geri yükleme listesinden dışlandı** — `YedekGrubu`'na `tablo` alanı geldi (`tabloYedegiMi`), `GET /api/yedek` tablo gruplarını süzüyor, `geriYukle` bir tablo adı gelirse "Excel dosyası okumak içindir, geri yüklenemez" diye duruyor. Adı `panzehir-` ile başladığı için `temizle()`'nin 30 günlük budamasına giriyor.
+
+**Hangi yedeklerin yanına yazılıyor:** gece yedeği (`gunluk`) ve "Şimdi Yedek Al" (`elle`). Haftalık tam yedek gece yedeğinin hemen ardından aynı veriyle alındığı için, geri yükleme öncesi yedek de okumak için değil güvenlik için olduğu için onlara tablo yazılmıyor. **Tablonun hatası yedeği başarısız saymıyor:** `YedekSonucu`'na `tablo` / `tabloHatasi` eklendi (`dosyalar` / `boyut`'a girmiyor, çünkü geri yüklenebilir dosyalar onlar), hata Ayarlar'daki durum satırında "· Excel kopyası yazılamadı" olarak görünüyor.
+
+**Doğrulama.** `tabloOlustur` sentetik bir yedekle çalıştırıldı, dosya exceljs ile geri okunup **50 kontrol** geçti: sayfa adları ve sırası, donmuş başlık / kalın / süzgeç, sütun biçimleri, tarih ve saat çevrimi, avans (15.000 − 14.500), veresiye kaydının kalanı, personel ödemesinde kişi adı, silinmiş kaydın dağıtımının siparişe sayılmaması (excel-57 ödenen 7.500), silinmiş ödeme satırı, mahsup / kart / havale etiketleri, hak ediş (+) ile kesintinin (−) kalana etkisi, boş koleksiyonlarla da dosya üretilmesi. `tsc --noEmit`, `eslint` ve `npm run build` temiz; build'de exceljs için uyarı çıkmadı, `serverExternalPackages` gerekmedi.
+
+**Canlıda denenmedi:** yerelde Firebase / Drive ortam değişkenleri yok. İlk deneme Ayarlar → "Şimdi Yedek Al".
 
 ### Geçmiş veri dağıtımı: `scripts/dagitim-gecmis.mjs` + `scripts/_dagitim-kural.mjs` (commit edildi, **henüz çalıştırılmadı**)
 
@@ -393,7 +414,7 @@ Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki özgün plan karşıl
 
 - **Geçmiş dağıtım betiğinin kuru çalıştırması:** `node scripts/dagitim-gecmis.mjs` — çıktı okunup onaylandıktan sonra `--yaz`. Ayrıntı yukarıda, 10.11 bölümünde.
 - **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
-- **Excel (.xlsx) yedeği:** gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenecek (`exceljs` zaten kurulu). Kod okunarak çıkarılan iki tuzak: (1) `exceljs` şu an **devDependency**, sunucuda çalışacağı için `dependencies`'e taşınmalı; (2) `yedekleriListele()` `panzehir-` ile başlayan her dosyayı görüyor — xlsx Ayarlar'daki **geri yükleme listesinden dışlanmalı** (geri yüklenebilir bir dosya değil) ama `temizle()`'nin 30 günlük budamasına girmeli. Sayfa önerisi: Kasa Kayıtları, Ödemeler ve Dağıtım (dizi alanları satır satır açılarak), Siparişler, Firmalar, Banka Hesapları, Personel, Personel Hareketleri.
+- **Excel (.xlsx) yedeğinin canlı denemesi:** Ayarlar → "Şimdi Yedek Al" (görseller dahil işaretsiz), sonuç mesajında Excel kopyasının adı görünmeli. Ayrıntı yukarıda, 10.11 bölümünde. (Kod bitti; isteğe bağlı kalan tek şey Ayarlar'a "Excel'i bilgisayara indir" düğmesi — şu an dosyaya yalnızca Drive'dan ulaşılıyor.)
 
 İsteğe bağlı, acil değil:
 

@@ -144,6 +144,10 @@ export interface YedekSonucu {
   dosyalar?: string[]; // Drive file names (a large full backup may be split into parts)
   boyut?: number; // bytes uploaded
   hata?: string;
+  // Okunabilir Excel kopyası (gece yedeği ve "Şimdi Yedek Al"): yedeğin kendisi değil, bu yüzden
+  // dosyalar / boyut'a girmez ve hatası yedeği başarısız saymaz.
+  tablo?: string;
+  tabloHatasi?: string;
 }
 
 export interface YedekDurumu {
