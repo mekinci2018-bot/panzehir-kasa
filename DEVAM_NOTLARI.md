@@ -1,14 +1,54 @@
 # Devam notları
 
-Son güncelleme: 09.11.2026 (hak ediş artık dönem sonunda yazılıyor, dönemi bitmemiş 11 satır silindi; Personel sayfasının düzeni yenilendi; 06.11'deki hak ediş düzeltmesi de notlara işlendi)
+Son güncelleme: 10.11.2026 (geçmiş dağıtım betiği bitti ve commit edildi; **kuru çalıştırma bekliyor**)
 
-**Hak ediş tarafında bekleyen adım kalmadı:** `scripts/hakedis-bitmemis-donem.mjs --yaz` çalıştırıldı, eski kuralla yazılmış **11 bitmemiş dönem satırı silindi ve doğrulandı**. Sıradaki iş Excel (.xlsx) yedeği.
+**Sıradaki adım sende:** `node scripts/dagitim-gecmis.mjs` kuru çalıştırmasını kendi terminalinde çalıştır (PIN soruyor), çıktıyı birlikte okuyalım. Betik varsayılan olarak hiçbir şey yazmıyor. Ondan sonraki iş Excel (.xlsx) yedeği.
 
 ## ⚠️ Ev bilgisayarına geçerken
 
 **Aşama 3 iş bilgisayarında yazıldı ve push edildi. Ev bilgisayarındaki 06.11 tarihli, push edilmemiş Aşama 3 çalışması geçersiz: orada `git stash` ile kenara al, sonra `git pull` yap. Birleştirmeye çalışma — iki uygulama aynı dosyalara (`lib/dagitim.ts`, `components/OutstandingList.tsx`, `lib/db.ts`) dokunuyor.**
 
 Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
+
+## 10.11.2026'da yapılanlar
+
+### Geçmiş veri dağıtımı: `scripts/dagitim-gecmis.mjs` + `scripts/_dagitim-kural.mjs` (commit edildi, **henüz çalıştırılmadı**)
+
+Aşama 3'ten (06.11) önce girilen "firmadan para alındı / firmaya para verildi" kayıtları düz Kasa Girişi / Çıkışı olarak yazıldı: `tur` yok, `dagitim` yok. Para cari bakiyeye yansıyor ama hiçbir açık kaleme düşmediği için Alacaklar / Borçlar'da kalemler tam tutarla duruyor. Bu iş o kayıtları uygulamanın kendi kuralıyla dağıtıyor.
+
+**İki dosya.** Kural motoru `scripts/_dagitim-kural.mjs` içinde, veritabanına dokunmadan duruyor; `scripts/dagitim-gecmis.mjs` onu kurup çıktısını basıyor ve `--yaz` ile uyguluyor. Ayrı dosya olmasının nedeni kuralların veritabanı olmadan birim kontrolünden geçebilmesi.
+
+**Aday kuralı kasıtlı olarak geniş:** `dagitim` taşımayan, firmaya bağlı, parası olan **her** kayıt bir kod alıyor — `tur` ne olursa olsun, Toplam ne olursa olsun. Hiçbir kayıt sessizce listeden düşmüyor. 05.11'de Kasa'ya Toplam'ı boş bırakılarak girilmiş bir tahsilat (ANATOLIA REKLAM, ₺8.000) eski süzgeçte hiçbir bölümde görünmüyordu; kodlar o yüzden böyle kuruldu.
+
+| kod | ne | yazılır mı |
+| --- | --- | --- |
+| `P0` | Toplam boş / 0, yalnızca para hareketi | evet · cari bakiye **değişmez** |
+| `AV` | `tur` tahsilat / mahsup, dağıtımı eksik (avans) | evet · bakiye değişmez |
+| `PT` | Toplam = Alınan, cariye hiç yansımıyor | yalnızca `--pesin-de` ile · bakiye **değişir** |
+| `PK` | Toplam > Alınan, para kendi kalemini kapatıyor | hayır |
+| `SP` | `siparisId` var, `dagitim` yok (eski yol) | hayır |
+| `VR` | `kaynak: "veresiye"` — Alacaklar / Borçlar kalemi | hayır |
+
+**İki yazma biçimi.** Müşteri tarafında kayıt uygulamanın tahsilat biçimine çevriliyor (`tur: "tahsilat"`, `toplamTutar: 0`, `dagitim[...]`). Tedarikçi tarafında uygulamada giden parada dağıtım yok — ödeme borcun kendi kaydına yazılıyor (`lib/db.ts tahsilEt`) — bu yüzden ödemenin parası borç kayıtlarının `odemeler` dizisine taşınıyor, ödeme kaydı çöp kutusuna gidiyor. Parası açık borçlara tam sığmayan ödeme bölünmek zorunda kalacağı için hiç yazılmıyor, "elle" diye işaretleniyor.
+
+**Taşınan ödemede tek gerçek risk Çöp Kutusu:** geri getirme hiçbir şey sormuyor, kayıt geri gelirse para iki kez sayılır (kendi tutarı + borç kalemlerine taşınan satırlar). Bu yüzden taşınan kaydın açıklamasına `[parası borç kalemlerine taşındı · GERİ GETİRME]` notu düşülüyor — Çöp Kutusu listesi açıklamayı gösteriyor — ve betik bittiğinde aynı uyarıyı yazıyor. 30 gün sonra kendiliğinden siliniyorlar.
+
+**Yazmayı durduran engeller (tedarikçi tarafı).** Ödeme kaydı şu durumlardan birindeyse taşınmıyor, elle incelenmek üzere ayrılıyor: özel kayıt türü var · kaydın kendi ödeme satırları var · **kaydın kendi `dagitim` satırları var** (kayıt çöp kutusuna gideceği için bir iadenin siparişten düşülmesi sessizce geri alınmış olurdu) · başka bir kaydın dağıtımı bu kayda düşüyor · mahsup belgesine bağlı · vade tarihi var (çek / senet olabilir).
+
+**Rapor artık aynı motoru okuyor.** `scripts/tutarsizlik-rapor.mjs` sınıflandırmayı kendi içinde ikinci bir kopya olarak taşıyordu; kaldırıldı, `_dagitim-kural.mjs` içindeki `sinifla` çağrılıyor. Rapor yalnızca "kesin `P0`/`AV` · şüpheli `PT` · bilgi `PK`/`SP`/`VR`" ayrımını ekliyor, böylece rapor ile yazan betik sessizce ayrışamıyor. Rapora B2 (tedarikçi tarafı, açık borçlara dağıtılmamış ödemeler) ve C2 (dağıtılmayacak adaylar) bölümleri de eklendi.
+
+**Doğrulama.** İki kontrol takımı da scratchpad'de yazıldı ve geçti:
+
+- **51 birim kontrolü** — altı kodun tamamı, açık hedef listesinin iki yönü ve sıralaması, kapatılan / kalanı bitmiş / arşivdeki kalemlerin hedef olmaması, planın eskiden yeniye dolması ve artanın avansta kalması, kuruş yuvarlaması, tek kaynak kuralı (`dagitim` varsa `siparisId` sayılmaz; giden dağıtım siparişin ödenenini azaltır), iki adayın aynı kalemi ikinci kez tüketmemesi, taşınan ödemenin hedef listesinden düşmesi, altı engelin her biri, cari etkileri (tahsilatta yalnızca avans, mahsupta karşı firma, gider / personel mahsubunda karşı tarafın girmemesi, transferin hiç girmemesi).
+- **Fark kontrolü** — `lib/dagitim.ts`, `lib/siparis.ts`, `lib/firma.ts`, `lib/kayit.ts` `tsc` ile JS'e çevrilip motorla karşılaştırıldı: **120 rastgele senaryo, 10.643 karşılaştırma, birebir aynı** (`siparisHesap`, `kayitKalani`, `avans`, `dagitilan`, `acikHedefler` + sırası, `dagitimPlani`, `cariOzetleri` bakiyesi).
+
+**Bilinçli tek fark, giden yön.** Uygulamanın `acikHedefler`'i siparişleri yön gözetmeden listeliyor, ama `lib/tahsilat.ts` onu yalnızca varsayılan `"gelen"` ile çağırıyor — `"giden"` dalı uygulamada hiç çalışmıyor. Motor o yönü kendisi tanımlıyor: borç tarafında sipariş hedef değil, çünkü giden parada yazma yolu ödemeyi bir kasa kaydının `odemeler` dizisine taşımak; siparişe taşınamaz. Yazma tarafına ayrıca savunma kontrolü kondu — hedef kasa kaydı değilse ya da bulunamazsa betik yazmayı durduruyor.
+
+**Yedek:** betik kuru çalıştırmada da `firmalar`, `kasaKayitlari` ve `siparisler` koleksiyonlarının tam halini `import/yedek-DAGITIM-ONCESI-<tarih>-<saat>.json` olarak yazıyor.
+
+**Sıradaki adım:** kuru çalıştırma. `node scripts/dagitim-gecmis.mjs` (bütün firmalar) ya da `node scripts/dagitim-gecmis.mjs --firma "ANATOLIA"` (o firmanın bütün kayıtlarının alan dökümü de basılır). PIN sorduğu için **kendi terminalinde** çalıştırılmalı. Çıktı okunup onaylanmadan `--yaz` çalıştırılmayacak.
+
+`tsc --noEmit`, `eslint` ve `npm run build` temiz.
 
 ## 09.11.2026'da yapılanlar
 
@@ -216,7 +256,7 @@ Sürekli ekranda duruyordu ve gerek kalmadı. `components/BugunAranacaklar.tsx` 
 
 Her aşamada aynı kurallar: önce kısa plan, veri değiştiren işlemden önce yedek, localhost'ta gösterim, test adımları, onaydan sonra commit + push. Mevcut kayıtlar bozulmayacak.
 
-**Durum (09.11.2026): Aşama 2, 2B, 3, 4, Genel Durum'un sadeleşmesi ve Personel sayfasının yeni düzeni bitti — plandaki bütün aşamalar tamam.** Sırada bekleyen bir aşama yok; geriye aşağıdaki "Bekleyen küçük işler" kaldı (iki bilgisayardaki Firebase anahtar dosyası, Excel `.xlsx` yedeği). Client secret yenileme ve PIN değiştirme 09.11'de listeden çıkarıldı.
+**Durum (10.11.2026): Aşama 2, 2B, 3, 4, Genel Durum'un sadeleşmesi ve Personel sayfasının yeni düzeni bitti — plandaki bütün aşamalar tamam.** Sırada bekleyen bir aşama yok. Açık tek iş, 10.11'de yazılan geçmiş dağıtım betiğinin **kuru çalıştırması**; geriye aşağıdaki "Bekleyen küçük işler" kaldı (iki bilgisayardaki Firebase anahtar dosyası, Excel `.xlsx` yedeği). Client secret yenileme ve PIN değiştirme 09.11'de listeden çıkarıldı.
 
 ### Aşama 2B — Genel Durum · sonradan sadeleştirildi (06.11.2026)
 
@@ -351,6 +391,7 @@ Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki özgün plan karşıl
 
 ## Bekleyen küçük işler
 
+- **Geçmiş dağıtım betiğinin kuru çalıştırması:** `node scripts/dagitim-gecmis.mjs` — çıktı okunup onaylandıktan sonra `--yaz`. Ayrıntı yukarıda, 10.11 bölümünde.
 - **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
 - **Excel (.xlsx) yedeği:** gece yedeğinin yanına okunabilir bir `.xlsx` dosyası eklenecek (`exceljs` zaten kurulu). Kod okunarak çıkarılan iki tuzak: (1) `exceljs` şu an **devDependency**, sunucuda çalışacağı için `dependencies`'e taşınmalı; (2) `yedekleriListele()` `panzehir-` ile başlayan her dosyayı görüyor — xlsx Ayarlar'daki **geri yükleme listesinden dışlanmalı** (geri yüklenebilir bir dosya değil) ama `temizle()`'nin 30 günlük budamasına girmeli. Sayfa önerisi: Kasa Kayıtları, Ödemeler ve Dağıtım (dizi alanları satır satır açılarak), Siparişler, Firmalar, Banka Hesapları, Personel, Personel Hareketleri.
 
@@ -359,5 +400,6 @@ Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki özgün plan karşıl
 - **Banka Havalesi açılır listesi:** hesap sahibi / banka adını özel tasarım bir açılır listeyle (küçük, soluk banka adı) göstermek — tarayıcının native `<select>`'i buna izin vermiyor.
 
 ## Yedekler (`import/`, git'e girmez)
+- `yedek-DAGITIM-ONCESI-<tarih>-<saat>.json`: `scripts/dagitim-gecmis.mjs` her çalıştırmada (kuru dahil) yazıyor; `firmalar`, `kasaKayitlari`, `siparisler` koleksiyonlarının tam hali.
 - `yedek-ONCESI-2026-10-31.json` ve `yedek-ONCESI-2026-10-31-aktarim-oncesi.json`: Excel aktarımından önceki deneme verisi.
 - `yedek-URETIM-ONCESI-2026-10-31.json`: Aktarımdan sonra, Üretimde düzeltmesinden önce (32,7 MB, görseller dahil).

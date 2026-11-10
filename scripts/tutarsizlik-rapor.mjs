@@ -1,7 +1,13 @@
-// SALT OKUMA. Aşama 3'ün ilk adımı: her firma için (cari bakiye) ile (siparişlerin kalan toplamı +
-// diğer açık alacak/borç kalemleri) karşılaştırılır; farkı olan firmalar, fark tutarı ve nedeni
-// listelenir. Ayrıca siparişlere hiç bağlanmamış tahsilatlar (düz Kasa Girişleri) çıkarılır —
-// Aşama 3'te dağıtılacak küme budur. Hiçbir şey yazmaz, hiçbir şey silmez.
+// SALT OKUMA. Her firma için (cari bakiye) ile (siparişlerin kalan toplamı + diğer açık alacak/borç
+// kalemleri) karşılaştırılır; farkı olan firmalar, fark tutarı ve nedeni listelenir. Ayrıca açık
+// kalemlere dağıtılmamış para (müşteri tarafında tahsilat, tedarikçi tarafında ödeme) çıkarılır.
+// Hiçbir şey yazmaz, hiçbir şey silmez; yazan betik scripts/dagitim-gecmis.mjs.
+//
+// ADAY KURALI (B / B2 bölümleri): `dagitim` taşımayan, firmaya bağlı, parası olan HER kayıt aday
+// sayılır — `tur` ne olursa olsun, Toplam ne olursa olsun. Eski sürüm yalnızca "tur yok + Toplam =
+// Alınan" kayıtlarına bakıyordu; 05.11'de Kasa'ya Toplam'ı boş bırakılarak girilmiş bir tahsilat
+// (ANATOLIA REKLAM, ₺8.000) bu yüzden hiçbir bölümde görünmüyordu. Kural ve kodlar
+// scripts/_dagitim-kural.mjs içinde tek yerde duruyor; bu rapor ile yazan betik aynı motoru okur.
 //
 //   node scripts/tutarsizlik-rapor.mjs            yalnızca bulgusu olan firmalar
 //   node scripts/tutarsizlik-rapor.mjs --hepsi    hareketi olan bütün firmalar
@@ -16,12 +22,12 @@
 import { readFileSync } from "node:fs";
 import { initializeApp } from "firebase/app";
 import { gizliSor } from "./_gizli-giris.mjs";
+import { EPS, kuralMotoru } from "./_dagitim-kural.mjs";
 import { inMemoryPersistence, initializeAuth, signInWithEmailAndPassword } from "firebase/auth";
 import { collection, getDocs, getFirestore } from "firebase/firestore";
 
 const KASA_EMAIL = "kasa@panzehir-kasa.app";
 const HEPSI = process.argv.includes("--hepsi");
-const EPS = 0.005;
 
 function envOku() {
   let icerik = readFileSync(".env.local", "utf8");
@@ -92,6 +98,21 @@ const avans = (k) =>
   k.tur === "tahsilat" || k.tur === "mahsup" ? Math.max(0, dagitilabilirTutar(k) - dagitilan(k)) : 0;
 const kayitKalani = (k) => (k.toplamTutar ?? 0) - (k.alinanTutar ?? 0) - (kayitDagitimlari.get(k.id) ?? 0);
 
+// ---- Dağıtılmamış para adayları ----
+// Sınıflandırma tek yerde: scripts/_dagitim-kural.mjs (kodların anlamı o dosyanın başındaki
+// yorumda). Rapor yalnızca "kesin / şüpheli / bilgi" ayrımını ekliyor; yazan betik
+// scripts/dagitim-gecmis.mjs aynı motoru kurduğu için iki betik sessizce ayrışamaz.
+//   kesin   [P0] [AV]       → dağıtılmalı; cari bakiye değişmez
+//   şüpheli [PT]            → cariye hiç yansımıyor; dönüştürülürse bakiye değişir, elle onay ister
+//   bilgi   [PK] [SP] [VR]  → dağıtılmayacak
+const motor = kuralMotoru({ kayitlar, siparisler });
+const KESIN = new Set(["P0", "AV"]);
+function dagitimSinifi(k) {
+  const s = motor.sinifla(k);
+  if (s.kod === "--") return { kod: "--" };
+  return { ...s, kesin: KESIN.has(s.kod), supheli: s.kod === "PT" };
+}
+
 // ---- lib/siparis.ts ----
 function siparisHesap(s) {
   const odenen = (s.oncekiOdenen ?? 0) + (siparisOdemeleri.get(s.id) ?? 0);
@@ -140,8 +161,9 @@ const al = (firmaId, ad) => {
       acikGiden: 0,
       acikSiparisSayisi: 0,
       fazlaOdenen: [], // siparişleri aşan ödemeler
-      dagitilmamis: [], // siparişe bağlanmamış düz Kasa Girişleri
-      avanslar: [], // dağıtımı eksik kalmış tahsilat / mahsup kayıtları
+      adaylar: [], // gelen para: dağıtılmamış tahsilat adayları (kodlu)
+      odemeAdaylari: [], // giden para: dağıtılmamış ödeme adayları (kodlu)
+      avanslar: [], // dağıtımı eksik kalmış tahsilat / mahsup kayıtları (A bölümünün hesabı için)
     };
     cariler.set(firmaId, c);
   }
@@ -175,12 +197,12 @@ for (const k of kayitlar) {
   if (avans(k) > EPS) {
     c.avanslar.push({ id: k.id, tarih: k.tarih, tutar: avans(k), tur: k.tur, aciklama: k.aciklama || "(açıklama yok)" });
   }
-  // Henüz tahsilat olarak işaretlenmemiş, siparişe de bağlanmamış düz Kasa Girişi: toplamTutar =
-  // alinanTutar olduğu için ekstrede borç + alacak satırı birbirini sıfırlıyor, cariye hiç
-  // yansımıyor. Aşama 3'te dağıtılacak küme budur.
-  const tam = Math.abs((k.toplamTutar ?? 0) - (k.alinanTutar ?? 0)) < EPS;
-  if (!k.tur && k.yon === "gelen" && !k.siparisId && tam && (k.alinanTutar ?? 0) > EPS && k.kaynak !== "veresiye") {
-    c.dagitilmamis.push({ id: k.id, tarih: k.tarih, tutar: k.alinanTutar, aciklama: k.aciklama || "(açıklama yok)" });
+  // Açık kalemlere dağıtılmamış para. Süzgeç yok: tur ne olursa olsun, Toplam ne olursa olsun
+  // aday sayılır, hangi kümeye girdiği kodla yazılır (dagitimSinifi).
+  const sinif = dagitimSinifi(k);
+  if (sinif.kod !== "--") {
+    const satir = { ...sinif, id: k.id, tarih: k.tarih, tur: k.tur, aciklama: k.aciklama || "(açıklama yok)" };
+    (k.yon === "gelen" ? c.adaylar : c.odemeAdaylari).push(satir);
   }
 }
 
@@ -207,18 +229,32 @@ for (const c of cariler.values()) {
   // Avans firmanın bizden alacağıdır: beklenen bakiyeden düşer.
   c.beklenen = c.siparisKalan + c.acikGelen - c.acikGiden - c.avansToplam;
   c.fark = c.bakiye - c.beklenen;
-  c.dagitilmamisToplam = c.dagitilmamis.reduce((s, d) => s + d.tutar, 0);
-  c.dagitilabilir = Math.min(c.dagitilmamisToplam + c.avansToplam, c.siparisKalan);
+  const topla = (liste, suz) => liste.filter(suz).reduce((s, d) => s + d.para, 0);
+  c.kesin = topla(c.adaylar, (d) => d.kesin); // P0 + AV: dağıtılması gereken, bakiyeyi değiştirmeyen para
+  c.supheli = topla(c.adaylar, (d) => d.supheli); // PT: elle onay
+  c.bilgi = topla(c.adaylar, (d) => !d.kesin && !d.supheli); // PK + SP
+  c.acikToplam = c.siparisKalan + c.acikGelen;
+  c.dagitilabilir = Math.min(c.kesin + c.supheli, c.acikToplam);
+  c.odemeKesin = topla(c.odemeAdaylari, (d) => d.kesin);
+  c.odemeSupheli = topla(c.odemeAdaylari, (d) => d.supheli);
+  c.odemeBilgi = topla(c.odemeAdaylari, (d) => !d.kesin && !d.supheli);
+  c.odemeDagitilabilir = Math.min(c.odemeKesin + c.odemeSupheli, c.acikGiden);
 }
 
 const hepsiListe = [...cariler.values()];
 const farkliLar = hepsiListe.filter((c) => Math.abs(c.fark) > 0.01).sort((a, b) => Math.abs(b.fark) - Math.abs(a.fark));
 const dagitimBekleyen = hepsiListe
-  .filter((c) => c.dagitilmamisToplam + c.avansToplam > EPS && c.siparisKalan > EPS)
+  .filter((c) => c.kesin + c.supheli > EPS && c.acikToplam > EPS)
   .sort((a, b) => b.dagitilabilir - a.dagitilabilir);
+const odemeBekleyen = hepsiListe
+  .filter((c) => c.odemeKesin + c.odemeSupheli > EPS && c.acikGiden > EPS)
+  .sort((a, b) => b.odemeDagitilabilir - a.odemeDagitilabilir);
 const avansOlabilir = hepsiListe
-  .filter((c) => c.dagitilmamisToplam + c.avansToplam > EPS && c.siparisKalan <= EPS)
-  .sort((a, b) => b.dagitilmamisToplam + b.avansToplam - (a.dagitilmamisToplam + a.avansToplam));
+  .filter((c) => c.kesin + c.supheli + c.odemeKesin + c.odemeSupheli > EPS)
+  .filter((c) => !dagitimBekleyen.includes(c) && !odemeBekleyen.includes(c))
+  .sort((a, b) => b.kesin + b.supheli - (a.kesin + a.supheli));
+// Yalnızca bilgi: parası kendi kalemini kapatan [PK] ve eski yolla siparişe sayılan [SP] kayıtlar.
+const bilgiOlanlar = hepsiListe.filter((c) => c.bilgi + c.odemeBilgi > EPS).sort((a, b) => b.bilgi - a.bilgi);
 
 const toplam = (liste, alan) => liste.reduce((s, c) => s + c[alan], 0);
 
@@ -255,6 +291,12 @@ for (const c of farkliLar) {
     const t = c.fazlaOdenen.reduce((s, f) => s + f.fazla, 0);
     console.log(`   NEDEN: siparişleri aşan ödeme (fazla ödeme / avans), toplam ${TL(t)}:`);
     for (const f of c.fazlaOdenen) console.log(`      · ${f.tarih}  ${f.urun} → ${TL(f.fazla)} fazla`);
+  } else if (c.kesin + c.supheli + c.odemeKesin + c.odemeSupheli > EPS) {
+    const kodlar = [...c.adaylar, ...c.odemeAdaylari].filter((d) => d.kesin || d.supheli);
+    console.log(
+      `   NEDEN: açık kalemlere dağıtılmamış para ${TL(c.kesin + c.supheli + c.odemeKesin + c.odemeSupheli)} ` +
+        `(${kodlar.map((d) => `[${d.kod}]`).join(" ")}) — B / B2 bölümüne bak.`
+    );
   } else {
     console.log(`   NEDEN: fazla ödeme görünmüyor; kalemler elle incelenmeli.`);
   }
@@ -262,37 +304,83 @@ for (const c of farkliLar) {
 
 // ---- B: siparişlere dağıtılmamış tahsilatlar (Aşama 3'ün asıl kümesi) ----
 console.log("\n" + "-".repeat(100));
-console.log(`B) SİPARİŞLERE DAĞITILMAMIŞ TAHSİLATLAR: ${dagitimBekleyen.length} firma`);
-console.log("   (düz Kasa Girişi olarak girilmiş tahsilatlar ve dağıtımı eksik kalmış avanslar; firmanın açık siparişi var)");
+console.log(`B) AÇIK KALEMLERE DAĞITILMAMIŞ TAHSİLATLAR (gelen para): ${dagitimBekleyen.length} firma`);
+console.log("   (dagitim taşımayan her giriş / tahsilat kaydı; firmanın açık siparişi ya da açık alacak kalemi var)");
 console.log("-".repeat(100));
 if (dagitimBekleyen.length === 0) console.log("Dağıtım bekleyen tahsilat yok.");
 for (const c of dagitimBekleyen) {
   console.log(`\n${c.ad}  [${c.tur}]`);
   console.log(
     `   açık sipariş ${String(c.acikSiparisSayisi).padStart(3)} · sipariş kalanı ${sag(c.siparisKalan)} · ` +
-      `dağıtılmamış ${sag(c.dagitilmamisToplam + c.avansToplam)} · dağıtılabilir ${sag(c.dagitilabilir)}`
+      `açık alacak kalemi ${sag(c.acikGelen)}`
   );
-  for (const d of c.dagitilmamis) console.log(`      · ${d.tarih}  ${sag(d.tutar)}  düz giriş · ${d.aciklama}`);
-  for (const a of c.avanslar) console.log(`      · ${a.tarih}  ${sag(a.tutar)}  ${a.tur} avansı · ${a.aciklama}`);
-  const artan = c.dagitilmamisToplam + c.avansToplam - c.dagitilabilir;
-  if (artan > EPS) console.log(`      → ${TL(artan)} siparişleri aşıyor; avans / alacak bakiyesi olarak kalır.`);
+  console.log(
+    `   dağıtılmamış ${sag(c.kesin)} (kesin) · ${sag(c.supheli)} (şüpheli) · dağıtılabilir ${sag(c.dagitilabilir)}`
+  );
+  for (const d of c.adaylar.filter((x) => x.kesin || x.supheli)) {
+    console.log(`      · ${d.tarih}  ${sag(d.para)}  [${d.kod}] ${d.neden}`);
+    console.log(`                        ${d.aciklama}  (${d.id})`);
+  }
+  const artan = c.kesin + c.supheli - c.dagitilabilir;
+  if (artan > EPS) console.log(`      → ${TL(artan)} açık kalemleri aşıyor; avans olarak kalır.`);
 }
 console.log("\n" + "-".repeat(100));
 console.log(
-  `B TOPLAMI: ${TL(toplam(dagitimBekleyen, "dagitilmamisToplam") + toplam(dagitimBekleyen, "avansToplam"))} ` +
-    `dağıtılmamış tahsilat · ${TL(toplam(dagitimBekleyen, "dagitilabilir"))} siparişlere dağıtılabilir`
+  `B TOPLAMI: ${TL(toplam(dagitimBekleyen, "kesin") + toplam(dagitimBekleyen, "supheli"))} dağıtılmamış tahsilat · ` +
+    `${TL(toplam(dagitimBekleyen, "dagitilabilir"))} açık kalemlere dağıtılabilir`
+);
+
+// ---- B2: tedarikçi tarafı, açık borçlara dağıtılmamış ödemeler ----
+console.log("\n" + "-".repeat(100));
+console.log(`B2) AÇIK BORÇLARA DAĞITILMAMIŞ ÖDEMELER (giden para): ${odemeBekleyen.length} firma`);
+console.log("   (dagitim taşımayan her çıkış kaydı; firmanın açık borç kalemi var)");
+console.log("-".repeat(100));
+if (odemeBekleyen.length === 0) console.log("Dağıtım bekleyen ödeme yok.");
+for (const c of odemeBekleyen) {
+  console.log(`\n${c.ad}  [${c.tur}]`);
+  console.log(
+    `   açık borç ${sag(c.acikGiden)} · dağıtılmamış ${sag(c.odemeKesin)} (kesin) · ${sag(c.odemeSupheli)} (şüpheli) · ` +
+      `dağıtılabilir ${sag(c.odemeDagitilabilir)}`
+  );
+  for (const d of c.odemeAdaylari.filter((x) => x.kesin || x.supheli)) {
+    console.log(`      · ${d.tarih}  ${sag(d.para)}  [${d.kod}] ${d.neden}`);
+    console.log(`                        ${d.aciklama}  (${d.id})`);
+  }
+}
+console.log("\n" + "-".repeat(100));
+console.log(
+  `B2 TOPLAMI: ${TL(toplam(odemeBekleyen, "odemeKesin") + toplam(odemeBekleyen, "odemeSupheli"))} dağıtılmamış ödeme · ` +
+    `${TL(toplam(odemeBekleyen, "odemeDagitilabilir"))} açık borçlara dağıtılabilir`
 );
 
 // ---- C: açık siparişi olmayan, dağıtılmamış tahsilatı olanlar ----
 console.log("\n" + "-".repeat(100));
-console.log(`C) AÇIK SİPARİŞİ OLMAYAN AMA SİPARİŞE BAĞLANMAMIŞ TAHSİLATI OLAN FİRMALAR: ${avansOlabilir.length}`);
-console.log("   (dağıtılacak sipariş yok; bilgi amaçlı — kapanmış siparişlerin tahsilatı ya da avans olabilir)");
+console.log(`C) AÇIK KALEMİ OLMAYAN AMA DAĞITILMAMIŞ PARASI OLAN FİRMALAR: ${avansOlabilir.length}`);
+console.log("   (dağıtılacak kalem yok; bilgi amaçlı — kapanmış kalemlerin tahsilatı ya da avans olabilir)");
 console.log("-".repeat(100));
 for (const c of avansOlabilir) {
-  const t = c.dagitilmamisToplam + c.avansToplam;
-  console.log(`   ${c.ad.padEnd(34)} ${sag(t)}  (${c.dagitilmamis.length + c.avanslar.length} kayıt)`);
+  const t = c.kesin + c.supheli + c.odemeKesin + c.odemeSupheli;
+  const kodlar = [...c.adaylar, ...c.odemeAdaylari].filter((d) => d.kesin || d.supheli).map((d) => d.kod);
+  console.log(`   ${c.ad.padEnd(34)} ${sag(t)}  (${kodlar.length} kayıt: ${kodlar.join(" ")})`);
 }
-console.log(`   C toplamı: ${TL(toplam(avansOlabilir, "dagitilmamisToplam") + toplam(avansOlabilir, "avansToplam"))}`);
+console.log(
+  `   C toplamı: ${TL(
+    toplam(avansOlabilir, "kesin") +
+      toplam(avansOlabilir, "supheli") +
+      toplam(avansOlabilir, "odemeKesin") +
+      toplam(avansOlabilir, "odemeSupheli")
+  )}`
+);
+
+// ---- C2: aday sayılan ama dağıtılmayacak kayıtlar (yalnızca bilgi) ----
+console.log("\n" + "-".repeat(100));
+console.log(`C2) DAĞITILMAYACAK ADAYLAR: ${bilgiOlanlar.length} firma`);
+console.log("   ([PK] para kendi kalemini kapatıyor · [SP] eski yolla siparisId üzerinden sayılıyor)");
+console.log("-".repeat(100));
+for (const c of bilgiOlanlar) {
+  const satirlar = [...c.adaylar, ...c.odemeAdaylari].filter((d) => !d.kesin && !d.supheli);
+  console.log(`   ${c.ad.padEnd(34)} ${sag(c.bilgi + c.odemeBilgi)}  (${satirlar.map((d) => `[${d.kod}] ${d.tarih}`).join(" · ")})`);
+}
 
 // ---- D: dağıtım satırlarının tutarlılığı ----
 console.log("\n" + "-".repeat(100));
