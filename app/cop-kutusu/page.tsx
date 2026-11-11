@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useFirmalar, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { firmaGeriYukle, kayitGeriYukle, odemeSatiriGeriYukle, siparisGeriYukle } from "@/lib/db";
-import { KAYIT_TURU_LABEL, kayitTutari, sayilan } from "@/lib/kayit";
+import { kayitTuruEtiketi, kayitTutari, sayilan } from "@/lib/kayit";
 import type { KasaKaydi, Odeme } from "@/lib/types";
 import { FIRMA_TURU_LABEL, firmaTuru } from "@/lib/firma";
 import { ODEME_SEKLI_LABEL, formatDate, formatTL } from "@/lib/format";
@@ -91,7 +91,7 @@ export default function CopKutusuPage() {
             id: k.id,
             tarih: k.tarih,
             firma: k.tur === "mahsup" ? `${k.firma} → ${k.karsiFirma ?? "—"}` : k.firma,
-            aciklama: [k.tur ? KAYIT_TURU_LABEL[k.tur] : "", k.aciklama].filter(Boolean).join(" · "),
+            aciklama: [kayitTuruEtiketi(k), k.aciklama].filter(Boolean).join(" · "),
             yon: k.yon,
             odeme: k.tur
               ? komisyonIds.length

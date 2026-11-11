@@ -16,6 +16,14 @@ export const KAYIT_TURU_LABEL: Record<KayitTuru, string> = {
   tahsilat: "Tahsilat",
 };
 
+// Ekranda görünen ad. "tahsilat" türü giden parada da kullanılır — parası açık borçlara dağıtılmış
+// bir tedarikçi ödemesi de bu türdedir — orada "Ödeme" diye okunur.
+export function kayitTuruEtiketi(k: Pick<KasaKaydi, "tur" | "yon">): string {
+  if (!k.tur) return "";
+  if (k.tur === "tahsilat" && k.yon === "giden") return "Ödeme";
+  return KAYIT_TURU_LABEL[k.tur];
+}
+
 // Tahsilat bilinçli olarak "özel kayıt" değildir: parası gerçekten kasaya girer, Arşiv'in Gelen
 // sekmesinde ve Giriş toplamında normal bir giriş gibi sayılır. Özel olan tarafı yalnızca cari
 // etkisi (dağıtılmamış kısmı kadar) ve ekstrede borç satırı üretmemesi.
@@ -62,7 +70,12 @@ export function cariEtkileri(k: KasaKaydi, kayitBakiyesi: (k: KasaKaydi) => numb
   if (transferMi(k) || komisyonMu(k)) return [];
   // Tahsilat: dağıtılan kısım açık kalemlerin kalanını düşürdüğü için bakiyeye orada yansır;
   // buraya yalnızca dağıtılmamış kısım (avans) girer, yoksa aynı para iki kez sayılırdı.
-  if (tahsilatMi(k)) return [{ firmaId: k.firmaId, personelId: k.personelId, etki: -avans(k) }];
+  // Avans yönlüdür: müşteriden fazla alınan para bizim borcumuz (−), tedarikçiye fazla ödenen para
+  // bizim alacağımız (+).
+  if (tahsilatMi(k)) {
+    const kalan = avans(k);
+    return [{ firmaId: k.firmaId, personelId: k.personelId, etki: k.yon === "gelen" ? -kalan : kalan }];
+  }
   if (mahsupMu(k)) {
     const etkiler: CariEtki[] = [{ firmaId: k.firmaId, personelId: k.personelId, etki: -avans(k) }];
     if (k.karsiTur !== "gider" && k.karsiTur !== "personel" && (k.karsiFirmaId || k.karsiPersonelId)) {

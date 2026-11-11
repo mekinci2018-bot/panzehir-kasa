@@ -590,6 +590,7 @@ export interface TahsilatGirdisi {
   bankaHesapId?: string;
   kartAciklama?: string;
   siparisId?: string; // yalnızca "nereden başlatıldı" bilgisi; para dagitim'den sayılır
+  yon?: KasaKaydi["yon"]; // varsayılan "gelen"; "giden" = tedarikçiye ödeme
   dagitim: DagitimKalemi[];
 }
 
@@ -607,7 +608,7 @@ function tahsilatVerisi(input: TahsilatGirdisi) {
     odemeSekli: input.odemeSekli,
     ...odemeAlanlari(input.odemeSekli, input.bankaHesapId, input.kartAciklama),
     dagitim: input.dagitim,
-    yon: "gelen" as const,
+    yon: input.yon ?? ("gelen" as const),
     durum: "aktif" as const,
   };
 }

@@ -76,20 +76,26 @@ const sag = (n, g = 16) => TL(n).padStart(g);
 
 // ---- lib/dagitim.ts ----
 // Tek kaynak kuralı: kayıt `dagitim` taşıyorsa katkı yalnızca ondan gelir, taşımıyorsa eski
-// `siparisId` yolundan. Aynı para iki kez sayılmaz.
+// `siparisId` yolundan. Aynı para iki kez sayılmaz. İşaret: para kalemle aynı yönde akıyorsa
+// kalemin kalanını düşürür (tedarikçi ödemesi açık borcu kapatır), ters yönde akıyorsa artırır
+// (iade). Sipariş her zaman "gelen" yönlü bir kalemdir.
 const siparisOdemeleri = new Map();
 const kayitDagitimlari = new Map();
 const ekle = (map, id, tutar) => map.set(id, (map.get(id) ?? 0) + tutar);
+const yonOf = new Map(kayitlar.map((k) => [k.id, k.yon]));
 for (const k of kayitlar) {
-  const isaret = k.yon === "gelen" ? 1 : -1;
+  const siparisIsareti = k.yon === "gelen" ? 1 : -1;
   if (k.dagitim) {
     for (const d of k.dagitim) {
-      if (d.hedefTur === "siparis") ekle(siparisOdemeleri, d.id, isaret * (d.tutar ?? 0));
-      else if (d.hedefTur === "kayit") ekle(kayitDagitimlari, d.id, isaret * (d.tutar ?? 0));
+      if (d.hedefTur === "siparis") ekle(siparisOdemeleri, d.id, siparisIsareti * (d.tutar ?? 0));
+      else if (d.hedefTur === "kayit") {
+        const hedefYon = yonOf.get(d.id) ?? "gelen";
+        ekle(kayitDagitimlari, d.id, (k.yon === hedefYon ? 1 : -1) * (d.tutar ?? 0));
+      }
     }
     continue;
   }
-  if (k.siparisId) ekle(siparisOdemeleri, k.siparisId, isaret * (k.alinanTutar ?? 0));
+  if (k.siparisId) ekle(siparisOdemeleri, k.siparisId, siparisIsareti * (k.alinanTutar ?? 0));
 }
 const dagitilan = (k) => (k.dagitim ?? []).reduce((t, d) => t + (d.tutar ?? 0), 0);
 const dagitilabilirTutar = (k) => (k.tur === "mahsup" ? (k.toplamTutar ?? 0) : (k.alinanTutar ?? 0));
@@ -102,15 +108,20 @@ const kayitKalani = (k) => (k.toplamTutar ?? 0) - (k.alinanTutar ?? 0) - (kayitD
 // Sınıflandırma tek yerde: scripts/_dagitim-kural.mjs (kodların anlamı o dosyanın başındaki
 // yorumda). Rapor yalnızca "kesin / şüpheli / bilgi" ayrımını ekliyor; yazan betik
 // scripts/dagitim-gecmis.mjs aynı motoru kurduğu için iki betik sessizce ayrışamaz.
-//   kesin   [P0] [AV]       → dağıtılmalı; cari bakiye değişmez
-//   şüpheli [PT]            → cariye hiç yansımıyor; dönüştürülürse bakiye değişir, elle onay ister
-//   bilgi   [PK] [SP] [VR]  → dağıtılmayacak
-const motor = kuralMotoru({ kayitlar, siparisler });
+//   kesin   [P0] [AV]            → açık kaleme dağıtılmalı; cari bakiye değişmez
+//   şüpheli [GD] [PA]            → harcama / peşin alışa çevrilmeli; firmanın bakiyesi değişir
+//   bilgi   [AK] [PT] [PK] [SP] [VR] → dokunulmayacak
+const motor = kuralMotoru({
+  kayitlar,
+  siparisler,
+  firmaTurleri: new Map(firmalar.map((f) => [f.id, f.tur ?? "musteri"])),
+});
 const KESIN = new Set(["P0", "AV"]);
+const SUPHELI = new Set(["GD", "PA"]);
 function dagitimSinifi(k) {
   const s = motor.sinifla(k);
   if (s.kod === "--") return { kod: "--" };
-  return { ...s, kesin: KESIN.has(s.kod), supheli: s.kod === "PT" };
+  return { ...s, kesin: KESIN.has(s.kod) && s.yazilir, supheli: SUPHELI.has(s.kod) };
 }
 
 // ---- lib/siparis.ts ----
@@ -133,7 +144,9 @@ function kayitBakiyesi(k) {
 // Mahsupta ödeyen tarafı aynı kuralla, alan tarafı karşıya sayılan tutarla etkilenir.
 function cariEtkileri(k) {
   if (k.tur === "transfer" || k.tur === "mahsup-komisyon") return [];
-  if (k.tur === "tahsilat") return [{ firmaId: k.firmaId, etki: -avans(k) }];
+  // Avans yönlü: müşteriden fazla alınan para bizim borcumuz (−), tedarikçiye fazla ödenen para
+  // bizim alacağımız (+).
+  if (k.tur === "tahsilat") return [{ firmaId: k.firmaId, etki: k.yon === "gelen" ? -avans(k) : avans(k) }];
   if (k.tur === "mahsup") {
     const etkiler = [{ firmaId: k.firmaId, etki: -avans(k) }];
     if (k.karsiTur !== "gider" && k.karsiTur !== "personel" && k.karsiFirmaId) {

@@ -235,22 +235,21 @@ export default function OutstandingList({
     return [siparis ? `${siparis} sipariş` : "", diger ? `${diger} kalem` : ""].filter(Boolean).join(" · ");
   }
 
-  // Firma satırındaki kısayol. Alacaklarda firma bazında tahsilat: girilen tutar firmanın açık
-  // kalemlerine eskiden yeniye dağıtılır. Borçlarda (dağıtım yok) en eski kalemin penceresi açılır.
+  // Firma satırındaki kısayol: girilen tutar firmanın açık kalemlerine dağıtılır. Alacakta eskiden
+  // yeniye, borçta çek / senet en yakın vadeden başlayarak, sonra vadesizler eskiden yeniye
+  // (lib/dagitim.ts hedefSirasi). Artan avans olarak kalır ve bildirimde görünür.
   function GrupButonu({ g, kucuk = false }: { g: Grup; kucuk?: boolean }) {
-    const dagitimli = yon === "gelen";
     return (
       <button
         className={`btn-primary ${kucuk ? "!py-1 !px-2.5 !text-[11px]" : "!py-1.5 !px-3 !text-xs"} whitespace-nowrap`}
         title={
-          dagitimli
+          yon === "gelen"
             ? `Tutar ${g.kalemler.length} açık kaleme eskiden yeniye dağıtılır`
-            : `En eski açık kalem · ${formatDate(g.enEski.tarih)}${g.enEski.aciklama ? " · " + g.enEski.aciklama : ""}`
+            : `Tutar ${g.kalemler.length} açık kaleme dağıtılır · çek / senet en yakın vadeden, sonra vadesizler eskiden yeniye`
         }
         onClick={(e) => {
           e.stopPropagation();
-          if (dagitimli) setFirmaTahsilat(g);
-          else odemeAc(g.enEski);
+          setFirmaTahsilat(g);
         }}
       >
         {actionLabel}
@@ -661,7 +660,8 @@ export default function OutstandingList({
         />
       )}
 
-      {/* Firma bazında tahsilat: tutar firmanın açık kalemlerine eskiden yeniye dağıtılır. */}
+      {/* Firma bazında tahsilat / ödeme: tutar firmanın açık kalemlerine dağıtılır (sıra GrupButonu
+          açıklamasında). Yön ikisinde de aynı yoldan geçer: lib/tahsilat.ts tahsilatYap. */}
       {firmaTahsilat && firmaTahsilat.firmaId && (
         <AmountModal
           title={`${actionLabel} — ${firmaTahsilat.ad}`}
@@ -673,14 +673,14 @@ export default function OutstandingList({
           onConfirm={async (amount, secim, tarih) => {
             try {
               const { mesaj } = await tahsilatYap(
-                { firmaId: firmaTahsilat.firmaId!, firma: firmaTahsilat.ad, tarih, tutar: amount, ...secim },
+                { firmaId: firmaTahsilat.firmaId!, firma: firmaTahsilat.ad, tarih, tutar: amount, ...secim, yon },
                 { kayitlar, siparisler }
               );
               bildir(mesaj);
               setFirmaTahsilat(null);
             } catch (err) {
               console.error(err);
-              alert("Tahsilat kaydedilemedi, lütfen tekrar deneyin.");
+              alert("Kaydedilemedi, lütfen tekrar deneyin.");
             }
           }}
         />

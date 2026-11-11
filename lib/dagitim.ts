@@ -27,7 +27,8 @@ export function dagitilan(k: KasaKaydi): number {
 // Hiçbir açık kaleme düşmemiş kısım: cari bakiyeyi bu kadar etkiler (dağıtılan kısım zaten
 // kalemlerin kalanını düşürdüğü için ikinci kez sayılmaz). Yalnızca tahsilat ve mahsup için
 // anlamlıdır; dağıtımı hiç olmayan bir tahsilatta tutarın tamamı avanstır, böylece dağıtım
-// yazılmamış eski kayıtlar da bakiyeye doğru yansır.
+// yazılmamış eski kayıtlar da bakiyeye doğru yansır. Tutar yönsüzdür (hep ≥ 0); hangi tarafın
+// alacağı olduğunu kaydın `yon`'u söyler, işareti lib/kayit.ts cariEtkileri koyar.
 export function avans(k: KasaKaydi): number {
   if (k.tur !== "tahsilat" && k.tur !== "mahsup") return 0;
   return Math.max(0, dagitilabilirTutar(k) - dagitilan(k));
@@ -38,23 +39,32 @@ export interface DagitimToplamlari {
   kayit: Map<string, number>; // kasa kaydı id → o kayda düşen para
 }
 
-// Bütün kayıtların dağıtımları, hedefe göre toplanmış. Para yönü kaydın `yon`'undan gelir: bir
-// iade (giden) siparişin ödenenini azaltır.
+// Bütün kayıtların dağıtımları, hedefe göre toplanmış. İşaret paranın kalemi kapatıp kapatmadığını
+// söyler: para kalemle **aynı yönde** akıyorsa kalemin kalanını düşürür (müşteri tahsilatı açık
+// alacağı, tedarikçi ödemesi açık borcu kapatır), **ters yönde** akıyorsa artırır (bir iade, alacak
+// kaleminin / siparişin ödenenini azaltır). Sipariş her zaman bir satıştır, yani "gelen" yönlü bir
+// kalemdir; kasa kaleminin yönü kendi `yon` alanından okunur.
 export function dagitimToplamlari(kayitlar: KasaKaydi[]): DagitimToplamlari {
   const siparis = new Map<string, number>();
   const kayit = new Map<string, number>();
   const ekle = (map: Map<string, number>, id: string, tutar: number) => map.set(id, (map.get(id) ?? 0) + tutar);
+  const yonOf = new Map(kayitlar.map((k) => [k.id, k.yon]));
 
   for (const k of kayitlar) {
-    const isaret = k.yon === "gelen" ? 1 : -1;
+    const siparisIsareti = k.yon === "gelen" ? 1 : -1;
     if (k.dagitim) {
       for (const d of k.dagitim) {
-        if (d.hedefTur === "siparis") ekle(siparis, d.id, isaret * d.tutar);
-        else if (d.hedefTur === "kayit") ekle(kayit, d.id, isaret * d.tutar);
+        if (d.hedefTur === "siparis") ekle(siparis, d.id, siparisIsareti * d.tutar);
+        else if (d.hedefTur === "kayit") {
+          // Hedef kayıt listede yoksa (silinmiş ya da süzülmüş) kalem gelen yönlü sayılır: eski
+          // davranış buydu, alacak kalemlerindeki hesap değişmez.
+          const hedefYon = yonOf.get(d.id) ?? "gelen";
+          ekle(kayit, d.id, (k.yon === hedefYon ? 1 : -1) * d.tutar);
+        }
       }
       continue; // tek kaynak kuralı: dagitim varsa siparisId tekrar sayılmaz
     }
-    if (k.siparisId) ekle(siparis, k.siparisId, isaret * k.alinanTutar);
+    if (k.siparisId) ekle(siparis, k.siparisId, siparisIsareti * k.alinanTutar);
   }
   return { siparis, kayit };
 }
@@ -81,6 +91,20 @@ export interface AcikHedef {
   sira: number; // aynı günde ikinci ölçüt (createdAt)
   kalan: number;
   ad: string;
+  vade?: string; // çek / senet: ödeme sırasını belirler (yalnızca giden parada)
+}
+
+// Kalemlerin dağıtım sırası. Gelen parada tarih sırası: sipariş ve alacak kalemleri birlikte,
+// eskiden yeniye. Giden parada önce **vadesi olan** kalemler (çek / senet) en yakın vadeden
+// başlayarak gelir — ödeme önce vadesi gelene gider — sonra vadesizler eskiden yeniye.
+function hedefSirasi(yon: KasaKaydi["yon"]): (a: AcikHedef, b: AcikHedef) => number {
+  const grup = (h: AcikHedef) => (yon === "giden" && h.vade ? 0 : 1);
+  return (a, b) => {
+    const g = grup(a) - grup(b);
+    if (g !== 0) return g;
+    if (grup(a) === 0 && a.vade !== b.vade) return a.vade! < b.vade! ? -1 : 1;
+    return a.tarih === b.tarih ? a.sira - b.sira : a.tarih < b.tarih ? -1 : 1;
+  };
 }
 
 export function hedefAnahtari(h: { hedefTur: HedefTur; id: string }): string {
@@ -89,6 +113,10 @@ export function hedefAnahtari(h: { hedefTur: HedefTur; id: string }): string {
 
 // Bir firmanın açık kalemleri, eskiden yeniye. Kapatılan ("Arşive Gönder") kalemler ve kalanı
 // bitmiş olanlar listede yoktur; transfer / mahsup / komisyon kayıtları da açık kalem değildir.
+//
+// `yon` paranın yönüdür, kalemin değil: "gelen" (müşteri tahsilatı) açık siparişleri ve açık alacak
+// kayıtlarını kapatır, "giden" (tedarikçi ödemesi) yalnızca açık borç kayıtlarını — sipariş bir
+// satıştır, borç tarafında kalem olmaz.
 export function acikHedefler(
   firmaId: string,
   siparisler: Siparis[],
@@ -97,7 +125,7 @@ export function acikHedefler(
   yon: KasaKaydi["yon"] = "gelen"
 ): AcikHedef[] {
   const hedefler: AcikHedef[] = [];
-  for (const s of siparisler) {
+  for (const s of yon === "gelen" ? siparisler : []) {
     if (s.firmaId !== firmaId || s.silindi || s.kapatildi) continue;
     const kalan = siparisHesap(s, toplamlar.siparis).kalan;
     if (kalan <= EPS) continue;
@@ -108,9 +136,17 @@ export function acikHedefler(
     if (k.durum !== "aktif" || k.yon !== yon) continue;
     const kalan = kayitKalani(k, toplamlar.kayit);
     if (kalan <= EPS) continue;
-    hedefler.push({ hedefTur: "kayit", id: k.id, tarih: k.tarih, sira: k.createdAt, kalan, ad: k.aciklama || "Kayıt" });
+    hedefler.push({
+      hedefTur: "kayit",
+      id: k.id,
+      tarih: k.tarih,
+      sira: k.createdAt,
+      kalan,
+      ad: k.aciklama || "Kayıt",
+      ...(k.vadeTarihi ? { vade: k.vadeTarihi } : {}),
+    });
   }
-  return hedefler.sort((a, b) => (a.tarih === b.tarih ? a.sira - b.sira : a.tarih < b.tarih ? -1 : 1));
+  return hedefler.sort(hedefSirasi(yon));
 }
 
 // Tutarı açık kalemlere eskiden yeniye dağıtır. Tek kalemden başlanmışsa (sipariş detayından
@@ -162,9 +198,10 @@ export function siparisOdemeSatirlari(siparisId: string, kayitlar: KasaKaydi[]):
 
 // ---- Avansın yeni siparişe düşmesi ----
 
-// Firmanın dağıtılmamış (avans) parasının toplamı.
+// Firmanın dağıtılmamış (avans) parasının toplamı. Yalnızca gelen para: yeni siparişe düşecek olan,
+// müşteriden fazla alınan paradır — tedarikçiye fazla ödenen para siparişle kapanmaz.
 export function firmaAvansi(firmaId: string, kayitlar: KasaKaydi[]): number {
-  return kayitlar.reduce((t, k) => (k.firmaId === firmaId && !k.silindi ? t + avans(k) : t), 0);
+  return kayitlar.reduce((t, k) => (k.firmaId === firmaId && !k.silindi && k.yon === "gelen" ? t + avans(k) : t), 0);
 }
 
 export interface AvansDusumu {
@@ -183,7 +220,7 @@ export function avansDusumleri(
   const dusumler: AvansDusumu[] = [];
   let kalan = siparisTutari;
   const avanslilar = kayitlar
-    .filter((k) => k.firmaId === firmaId && !k.silindi && avans(k) > EPS)
+    .filter((k) => k.firmaId === firmaId && !k.silindi && k.yon === "gelen" && avans(k) > EPS)
     .sort((a, b) => (a.tarih === b.tarih ? a.createdAt - b.createdAt : a.tarih < b.tarih ? -1 : 1));
   for (const k of avanslilar) {
     if (kalan <= EPS) break;

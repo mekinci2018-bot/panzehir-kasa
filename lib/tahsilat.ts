@@ -2,6 +2,12 @@
 // kalem, sipariş detayı, Kasa satırı, Genel Durum kısayolu, mahsup) para aynı kuralla dağıtılır —
 // firmanın açık kalemlerine eskiden yeniye, başlatıldığı kalem önce, artanı avans.
 //
+// Giden para (tedarikçiye ödeme) aynı yapıyı kullanır: `yon: "giden"` verildiğinde para firmanın
+// açık **borç** kalemlerine dağıtılır — çek / senet en yakın vadeden, diğerleri eskiden yeniye
+// (lib/dagitim.ts acikHedefler). Kısayolu `odemeYap`. Kayıt yine `tur: "tahsilat"` olur; o tür
+// "parası açık kalemlere dağıtılmış para hareketi" demektir, ekranda giden yönde "Ödeme" yazar
+// (lib/kayit.ts kayitTuruEtiketi).
+//
 // Dağıtımı yazan her yer buradan geçer; plan kuralı lib/dagitim.ts'te, yazma lib/db.ts'te.
 import { acikHedefler, dagitimMesaji, dagitimPlani, dagitimToplamlari } from "./dagitim";
 import { siparisOdemeAl, tahsilatKaydet } from "./db";
@@ -23,6 +29,8 @@ export interface TahsilatIstegi {
   bankaHesapId?: string;
   kartAciklama?: string;
   aciklama?: string;
+  // Paranın yönü: "gelen" tahsilat (varsayılan), "giden" tedarikçiye ödeme.
+  yon?: KasaKaydi["yon"];
   // Tek kalemden / siparişten başlatıldıysa para önce oraya düşer.
   oncelikli?: { hedefTur: HedefTur; id: string };
   // Sipariş detayından başlatıldıysa kayıt biçimi sipariş ödemesiyle aynı kalır (siparisId + açıklama).
@@ -33,7 +41,7 @@ export interface TahsilatIstegi {
 // bildirimde kaç kaleme düştüğünü söylemek için aynı plan kullanılıyor).
 export function tahsilatPlani(istek: TahsilatIstegi, baglam: TahsilatBaglami): DagitimKalemi[] {
   const toplamlar = dagitimToplamlari(baglam.kayitlar);
-  const hedefler = acikHedefler(istek.firmaId, baglam.siparisler, baglam.kayitlar, toplamlar);
+  const hedefler = acikHedefler(istek.firmaId, baglam.siparisler, baglam.kayitlar, toplamlar, istek.yon ?? "gelen");
   const oncelikli = istek.oncelikli ?? (istek.siparis ? { hedefTur: "siparis" as const, id: istek.siparis.id } : undefined);
   return dagitimPlani(istek.tutar, hedefler, oncelikli);
 }
@@ -59,9 +67,19 @@ export async function tahsilatYap(
         firma: istek.firma,
         firmaId: istek.firmaId,
         aciklama: istek.aciklama,
+        yon: istek.yon,
         dagitim: plan,
       });
   return { id: ref.id, mesaj: dagitimMesaji(plan, istek.tutar, formatTL) };
+}
+
+// Tedarikçiye ödeme: aynı plan, aynı yazma yolu, yalnızca yön giden.
+export function odemePlani(istek: TahsilatIstegi, baglam: TahsilatBaglami): DagitimKalemi[] {
+  return tahsilatPlani({ ...istek, yon: "giden" }, baglam);
+}
+
+export function odemeYap(istek: TahsilatIstegi, baglam: TahsilatBaglami): Promise<{ id: string; mesaj: string }> {
+  return tahsilatYap({ ...istek, yon: "giden" }, baglam);
 }
 
 // Düzenlemede yeniden dağıtım: kayıt kendi parasını kendi kalemlerinden düşmüş olduğu için hesaba

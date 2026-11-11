@@ -1,16 +1,83 @@
 # Devam notları
 
-Son güncelleme: 10.11.2026 (Excel yedeği yazıldı ve commit edildi; geçmiş dağıtım betiğinin **kuru çalıştırması hâlâ bekliyor**)
+Son güncelleme: 11.11.2026 (dağıtım kuralları yeniden karara bağlandı, `--yaz` **uygulandı — 29 belge**; commit edildi ve push edildi)
 
-**Sıradaki adım sende:** `node scripts/dagitim-gecmis.mjs` kuru çalıştırmasını kendi terminalinde çalıştır (PIN soruyor), çıktıyı birlikte okuyalım. Betik varsayılan olarak hiçbir şey yazmıyor.
+**Sıradaki adım sende:** `node scripts/tutarsizlik-rapor.mjs` (salt okuma) ile Alacaklar / Borçlar ve firma ekstrelerine bak. Yazmanın bıraktığı iki gerçek kalem aşağıda, "Yazma sonrası beş uyarı" bölümünde: İSTANBUL PASLANMAZ ₺28.000 ve sipariş `excel-222` ₺1.200.
 
-**İkinci adım sende:** Excel yedeği canlıda bir kez denenmeli — Ayarlar → **Şimdi Yedek Al** (görseller dahil işaretli DEĞİL). Sonuç mesajı `Excel kopyası: panzehir-tablo-….xlsx` diyorsa iş tamam; Drive'daki dosyayı açıp göz gezdir. Yerelde ortam değişkenleri olmadığı için bu yol çalıştırılamadı (dosyanın kendisi sentetik veriyle üretilip doğrulandı).
+**İkinci adım sende:** Excel yedeği canlıda bir kez denenmeli — Ayarlar → **Şimdi Yedek Al** (görseller dahil işaretli DEĞİL). Sonuç mesajı `Excel kopyası: panzehir-tablo-….xlsx` diyorsa iş tamam; Drive'daki dosyayı açıp göz gezdir. Yerelde Drive / `CRON_SECRET` ortam değişkenleri olmadığı için bu yol çalıştırılamadı (dosyanın kendisi sentetik veriyle üretilip doğrulandı). `.env.local` yalnızca istemci tarafı Firebase ayarlarını taşıyor — `dagitim-gecmis.mjs` ve `tutarsizlik-rapor.mjs` yerelde çalışır (PIN ile), yedek / Excel yolu çalışmaz.
 
 ## ⚠️ Ev bilgisayarına geçerken
 
 **Aşama 3 iş bilgisayarında yazıldı ve push edildi. Ev bilgisayarındaki 06.11 tarihli, push edilmemiş Aşama 3 çalışması geçersiz: orada `git stash` ile kenara al, sonra `git pull` yap. Birleştirmeye çalışma — iki uygulama aynı dosyalara (`lib/dagitim.ts`, `components/OutstandingList.tsx`, `lib/db.ts`) dokunuyor.**
 
 Aynı durum 04.11'de tersi yönde yaşandı: Aşama 2 iki bilgisayarda ayrı ayrı yazıldı, ev sürümü esas alındı, iş bilgisayarındaki sürüm `yerel-asama2-04-11` dalında duruyor (silinmedi, birleştirilmedi).
+
+## 11.11.2026'da yapılanlar
+
+### Dağıtım kuralları yeniden karara bağlandı (uygulandı: `--yaz`, 29 belge)
+
+10.11'de yazılan betiğin kuru çalıştırması okundu. Çıkan kararlar ve kodda karşılıkları:
+
+1. **`--pesin-de` kaldırıldı.** `[PT]` (Toplam = Peşin) kayıtlar — özellikle gider kalemleri — doğru kaydedilmiş sayılıyor; harcama / peşin işlem olarak kalıyorlar, betikte onları dönüştüren yol artık yok.
+2. **Tedarikçi ödemesi borç kaydına TAŞINMIYOR.** Eski yol ödemenin parasını borç kayıtlarının `odemeler` dizisine taşıyıp ödeme kaydını çöp kutusuna atıyordu (ve "geri getirilirse para iki kez sayılır" uyarısı gerekiyordu). Artık kasa kaydı **yerinde kalıyor**, `dagitim` (`hedefTur: "kayit"`) ile açık borca bağlanıyor. **Hedef kayda hiç dokunulmuyor** — bütün değişiklik parayı getiren kayıtta. Çöp kutusu riski tamamen kalktı.
+3. **Gider kalemine yapılan her ödeme harcamadır, asla avans olmaz.** Toplam boş girilmiş gider kayıtları `toplamTutar = alinanTutar` yapılıyor (`[GD]`); gider kaleminin cari bakiyesi sıfırlanıyor. **Kasa formu da düzeltildi:** gider kalemi seçilip Toplam boş bırakılırsa otomatik Toplam = Peşin yazılıyor, kayıt tahsilat / avans yoluna hiç girmiyor.
+4. **Açık borcu olmayan tedarikçiye Toplam boş ödeme peşin alıştır** (`[PA]`, örn. SDS REKLAM ₺3.000), avans değil → `toplamTutar = alinanTutar`.
+5. **İki firmanın türü gider kalemi yapılıyor:** MUSTAFA EKİNCİ - KREDİ KARTI ÖDEMELERİ, ALİ AKIN ŞAHSİ. Betikte `TUR_DEGISIMI` listesinde; isim eşleşmesi tire / boşluk farklarına takılmasın diye harf-rakam dışı karakterler atılarak yapılıyor, eşleşme bulunamazsa `--yaz` durur.
+6. TANIDIK REKLAM ₺15.000 avans olarak kalıyor (`[AK]`: gelen, açık kalem yok → yazılmaz). EBRU REKLAM ₺7.050 peşin satış olarak kalıyor (`[PT]`). NAKİT KAPAMA ve PANZEHİR HESAP KAPAMA gider kalemi olarak kalıyor, bakiyeleri `[GD]` ile sıfırlanıyor.
+
+**Kod tarafında asıl değişiklik: dağıtımın işareti.** `lib/dagitim.ts dagitimToplamlari` işareti eskiden yalnızca parayı getiren kaydın `yon`'undan okuyordu; bu yüzden giden bir ödemenin dağıtımı borcun kalanını **artırıyordu**. Artık işaret hedefin yönüne göre: para kalemle **aynı yönde** akıyorsa kalanı düşürür (tedarikçi ödemesi açık borcu kapatır), **ters yönde** akıyorsa artırır (iade). Sipariş her zaman "gelen" yönlü bir kalem; hedef listede yoksa eski davranış korunuyor, bu yüzden **mevcut verideki hiçbir sayı değişmiyor** (fark kontrolü bunu doğruluyor). Yanında:
+
+- `acikHedefler` giden yönde artık sipariş listelemiyor (sipariş bir satıştır; borç tarafında kalem olmaz). Uygulama bu dalı zaten hiç çağırmıyordu, tanım artık tek yerde.
+- `avans` yönlü okunuyor: `cariEtkileri`'nde müşteriden fazla alınan para bizim borcumuz (−), tedarikçiye fazla ödenen para bizim alacağımız (+).
+- `firmaAvansi` / `avansDusumleri` yalnızca gelen parayı sayıyor — yeni siparişe düşen avans müşteri avansıdır.
+- `tur: "tahsilat"` artık giden parada da kullanılıyor (parası açık borçlara dağıtılmış ödeme). Ekranda "Ödeme" diye okunması için `kayitTuruEtiketi()` geldi (Çöp Kutusu ve Excel yedeği onu kullanıyor; Arşiv / Kasa rozetleri `ozelKayitMi` arkasında olduğu için tahsilatı hiç göstermiyor).
+- `scripts/tutarsizlik-rapor.mjs` kendi işaret kopyasını ve avans işaretini aynı kurala getirdi; sınıflar `kesin [P0] [AV] · şüpheli [GD] [PA] · bilgi [AK] [PT] [PK] [SP] [VR]` oldu ve firma türlerini motora veriyor.
+
+**Betik artık üç grup yazıyor** (`--yaz` üçünü birlikte uygular, kuru çıktıda ayrı ayrı görünürler): 1. firma türü → gider, 2. dağıtım (`tur="tahsilat"` + `dagitim`), 3. peşine çevirme (`toplamTutar = alinanTutar`, `durum: "tamamlandi"` — `lib/db.ts kasaKaydiVerisi` ile aynı kural). Kuru çıktıya ayrıca **gider kalemi bakiye kontrolü** (yazma sonrası sıfırlanmayanlar) ve gruplanmış "YAZILACAKLAR" listesi eklendi.
+
+**Doğrulama artık veriyi yeniden okuyup motoru baştan kuruyor:** yazılanlar plana uyuyor mu, hiçbir kalemin kalanı eksiye düştü mü, **cari bakiyeler planın öngördüğü yerde mi** (firma bazında karşılaştırma). Yedek eskisi gibi her çalıştırmada (kuru dahil) alınıyor.
+
+**Kuru çalıştırma okunduktan sonraki üç düzeltme (11.11, ikinci tur):**
+
+- **ALKAN YEMEK ve OKUYAN CATRİNG tedarikçi**, gider kalemi değil (ikisinin de devir borcu var). `TUR_DEGISIMI` artık `{id?, ad, tur}` taşıyor, bu ikisi kimlikle eşleşiyor ve `→ tedarikci` olarak yazılıyor. ALKAN YEMEK'in 10.11 tarihli ₺2.500 kaydı böylece `[GD]` harcama değil `[P0]` dağıtım oluyor: devrin kalanı 7.250 → 4.750, firma bakiyesi −4.750. (Bakiye dağıtımdan **önce de** −4.750'ydi — para zaten bakiyeye yansıyordu; eski kuralda ₺2.500 harcamaya çevrildiği için bakiye −7.250'de kalıyordu.)
+- **Genel kural:** türü "gider" olup **açık borcu** (devir / veresiye) olan firma otomatik tedarikçi sayılıyor — motorda `etkinTuru()`, planlama kalemleri tükettikçe sonuç kaymasın diye başlangıç durumundan bir kez hesaplanıyor. Kuru çıktı bu kuralın hangi firmalarda devreye girdiğini ayrıca yazıyor (firma türü yazılmadan).
+- **Gider kalemine yazılmış `tur: "tahsilat"` kaydı kasa düzeltme kaydı sayılıyor:** `toplamTutar = alinanTutar` + **`tur` alanı kaldırılıyor** (`deleteField`), bakiye sıfırlanıyor, "elle bakılacak" listesinden çıkıyor (NAKİT KAPAMA 06.11, ₺22.600). Dağıtımı olan ya da mahsup türündeki gider kayıtları elle incelenmeye devam ediyor — tür kaldırılsa dağıtım satırları sessizce kaleme sayılmaya devam ederdi.
+- `[GD]` / `[PA]` satırlarında artık "avansta kalacak" yazmıyor (kalan sıfırlandığı için avans diye bir şey kalmıyor).
+
+### Kasa satırından tedarikçi ödemesi: giden para da dağıtılıyor
+
+Yukarıdaki kuralın yeni girişlerde de geçerli olması için (yoksa `[PA]` / `[P0]` durumu tekrar tekrar oluşurdu). Kasa'da **tedarikçi seçilip Toplam boş + Peşin dolu** girilen çıkış artık firmanın açık borç kalemlerine dağıtılıyor — müşteri tarafıyla aynı yapı, aynı bildirim. Açık borcu yoksa kayıt peşin alış oluyor (Toplam = Peşin).
+
+- **Sıra kuralı yeni:** giden parada önce **vadesi olan** kalemler (çek / senet) **en yakın vadeden** başlayarak, sonra vadesizler eskiden yeniye. `lib/dagitim.ts`'e `hedefSirasi()` geldi, `AcikHedef`'e `vade` alanı; gelen yöndeki sıra (düz tarih sırası, sipariş ve alacak kalemleri birlikte) **değişmedi**. Aynı sıra motorda (`scripts/_dagitim-kural.mjs`) da var, yani betik ile uygulama ayrışmıyor.
+- **Tek yol korundu:** `lib/tahsilat.ts` artık `yon` alıyor (`istek.yon ?? "gelen"`), yanında `odemeYap` / `odemePlani` kısayolları. `lib/db.ts TahsilatGirdisi`'ne `yon` eklendi (varsayılan "gelen"). Kayıt yine `tur: "tahsilat"` — o tür "parası açık kalemlere dağıtılmış para hareketi" demek; ekranda giden yönde "Ödeme" yazıyor.
+- Kasa formundaki iki dal (gelen tahsilat / giden ödeme) tek `if` oldu; gidende plan boş çıkarsa `toplam = pesin` ile düz kayıt yoluna düşüyor.
+- **Para açık borçları aşarsa** artan avans olarak kalıyor ve bildirimde "₺… avansta kaldı" diye görünüyor — müşteri tarafındaki davranışın aynısı.
+- **Borçlar'daki firma satırı düğmesi de dağıtımlı oldu** (`OutstandingList`): eskiden en eski kalemin ödeme penceresini açıyordu (`dagitimli = yon === "gelen"`), artık Alacaklar'daki gibi firma bazında ödeme penceresi açılıp tutar açık kalemlere dağıtılıyor — aynı `tahsilatYap`, `yon` prop'undan geçiyor, aynı bildirim. Düğmenin `title`'ı borçta sırayı yazıyor ("çek / senet en yakın vadeden, sonra vadesizler eskiden yeniye").
+- **Kalan tek asimetri:** Borçlar'da **tek kalemin** ödeme penceresi hâlâ `tahsilEt` ile parayı doğrudan o kaydın `odemeler` dizisine yazıyor (Alacaklar'da tek kalem `tahsilatYap` + `oncelikli` ile çalışıp artanı diğer kalemlere taşıyor). Hedefi belli bir ödeme için doğru davranış olduğu için bilinçli bırakıldı; iki mekanizma aynı parayı iki kez düşürmüyor (`lib/dagitim.ts kayitKalani`).
+
+### Yazma sonrası beş uyarı: incelendi, hiçbiri bu yazmadan kaynaklanmıyor
+
+`--yaz` 29 belge güncelledi (26 kasa kaydı + 3 firma türü), doğrulama 5 uyarı verdi. Yedek (`import/yedek-DAGITIM-ONCESI-2026-11-11-145559.json`) üzerinden plan yeniden üretilip karşılaştırıldı — yazma öncesi ve sonrası değerler **birebir aynı**, hiçbirine dağıtım satırı eklenmemiş:
+
+| Kayıt | Kim | Ne | Önce → sonra | Sebep |
+| --- | --- | --- | --- | --- |
+| `16kjFQU95MQCS591y3GD` | ERCAN FINDIK | personel ödemesi | −28.075 → −28.075 | `[--] firmaya bağlı değil`, betik dokunmadı |
+| `apX5g0rQZg99DN7KXKWF` | MUHAMMET ÇIRAK | personel ödemesi | −1.000 → −1.000 | aynı |
+| `nNPoXGrotCSkuxuGZ8Bo` | ERCAN FINDIK | personel ödemesi | −6.925 → −6.925 | aynı |
+| `oAzwkrBhf0sju0fVRaNd` | İSTANBUL PASLANMAZ | ödeme, Toplam boş | −28.000 → −28.000 | `[P0]` ama **elle**: firmanın tek açık borcu ₺449,98, ₺28.000 sığmıyor |
+| sipariş `excel-222` | HİZMET REKLAM · ULUSAL GRUP No 1047 | tutar ₺24.000, önceki ödenen ₺25.200 | −1.200 → −1.200 | Excel aktarımından geliyor, siparişe hiç ödeme yazılmamış |
+
+**Kontrol fazla genişti, daraltıldı:** uyarı "aktif, türsüz, siparişsiz, kalanı eksi" diyordu; ama **Toplam'ı boş** olan kayıt bir *kalem* değil, saf para hareketidir (personel ödemesi, dağıtılmamış tedarikçi ödemesi) ve kalanı tanımı gereği eksidir. Kontrol artık yalnızca `toplamTutar > 0` olan kalemlere bakıyor. Kontrolün asıl aradığı şey — "aynı kalem iki kez tüketilmiş" — hiç olmamıştı: yazma sonrası halde Toplam > 0 olup kalanı eksiye düşen **sıfır** kayıt var.
+
+**Geriye iki gerçek kalem kaldı** (veri işi, kod işi değil): İSTANBUL PASLANMAZ'a ₺28.000 ödenmiş ama karşılığında yalnızca ₺449,98 açık borç görünüyor (eksik alış kaydı), ve `excel-222` siparişinde aktarımdan gelen ₺1.200 fazla ödeme var.
+
+### Kontroller (11.11'in tamamı için)
+
+**`119 birim kontrolü`** (scratchpad): sekiz kodun tamamı; gider kaleminin hâlleri (borçlu gider firmasının tedarikçi sayılması, açık alacağın türü değiştirmemesi, kasa düzeltme kaydında tür kaldırılması, dağıtımlı / mahsup kayıtların elle kalması); giden yönde siparişin hedef olmaması, ters yöndeki açık kalemin hedef sayılmaması; işaret kuralının üç yönü; vade sırası (en yakın vade önce, aynı vadede tarih sırası, vadesizlerin arkada kalması, planın önce en yakın vadeli kaleme düşmesi, gelen yönde sıranın değişmemesi); hedef süzgeçleri; planlamada hedeflere dokunulmaması; tam sığmayan ödemenin yazılmaması; dört giden engeli; iki adayın aynı kalemi ikinci kez tüketmemesi; `[P0]`'ın bakiyeyi değiştirmemesi; `[GD]`/`[PA]`'nın bakiyeyi sıfırlaması; kuruş yuvarlaması; avansın yönlü cari etkisi.
+
+**Fark kontrolü:** `lib/dagitim.ts`, `lib/siparis.ts`, `lib/kayit.ts` JS'e çevrilip motorla karşılaştırıldı — **150 rastgele senaryo, 5.735 karşılaştırma, birebir aynı**. Kontrolün gerçekten yeni kuralları denediği, derlenmiş kopyada kural geri alınarak doğrulandı: işaret eski haline çevrilince 291, vade gruplaması kaldırılınca 6 fark çıkıyor.
+
+`tsc --noEmit`, `eslint` ve `npm run build` temiz.
 
 ## 10.11.2026'da yapılanlar
 
@@ -412,7 +479,8 @@ Ayrıntı yukarıda, 04.11.2026 bölümünde. Aşağıdaki özgün plan karşıl
 
 ## Bekleyen küçük işler
 
-- **Geçmiş dağıtım betiğinin kuru çalıştırması:** `node scripts/dagitim-gecmis.mjs` — çıktı okunup onaylandıktan sonra `--yaz`. Ayrıntı yukarıda, 10.11 bölümünde.
+- **Tutarsızlık raporu:** `node scripts/tutarsizlik-rapor.mjs` (salt okuma) — dağıtım yazıldıktan sonra henüz çalıştırılmadı.
+- **Yazmanın bıraktığı iki veri kalemi:** İSTANBUL PASLANMAZ ₺28.000 (eksik alış kaydı) ve sipariş `excel-222` ₺1.200 (aktarımdan gelen fazla ödeme). Ayrıntı yukarıda, "Yazma sonrası beş uyarı" bölümünde.
 - **Firebase anahtar dosyası:** `panzehir-84661-firebase-adminsdk-…json` — hem ev hem **iş bilgisayarında** kalıcı olarak silinecek (yedek ve aktarım betikleri için kullanılmıştı, artık gerekmiyor).
 - **Excel (.xlsx) yedeğinin canlı denemesi:** Ayarlar → "Şimdi Yedek Al" (görseller dahil işaretsiz), sonuç mesajında Excel kopyasının adı görünmeli. Ayrıntı yukarıda, 10.11 bölümünde. (Kod bitti; isteğe bağlı kalan tek şey Ayarlar'a "Excel'i bilgisayara indir" düğmesi — şu an dosyaya yalnızca Drive'dan ulaşılıyor.)
 

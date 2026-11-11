@@ -8,7 +8,7 @@ import ExcelJS from "exceljs";
 import { avans, dagitimToplamlari, kayitKalani, siparisOdemeleri } from "../dagitim";
 import { FIRMA_TURU_LABEL, firmaTuru } from "../firma";
 import { ODEME_SEKLI_LABEL } from "../format";
-import { KAYIT_TURU_LABEL } from "../kayit";
+import { kayitTuruEtiketi } from "../kayit";
 import { HAREKET_LABEL, MAAS_TURU_LABEL, hareketIsareti, maasTuru } from "../personel";
 import { URETIM_LABEL, siparisHesap } from "../siparis";
 import { trZaman, type YedekDosyasi } from "../yedekBicimi";
@@ -163,7 +163,7 @@ export async function tabloOlustur(veri: YedekDosyasi): Promise<Buffer> {
     kayitlar.map((k) => [
       gun(k.tarih),
       k.yon === "gelen" ? "Giriş" : "Çıkış",
-      k.tur ? KAYIT_TURU_LABEL[k.tur] : "",
+      kayitTuruEtiketi(k),
       taraf(k),
       yazi(k.aciklama),
       k.toplamTutar,

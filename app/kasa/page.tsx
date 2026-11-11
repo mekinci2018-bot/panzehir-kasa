@@ -30,7 +30,7 @@ import {
 import { personelBorcuToplami } from "@/lib/personel";
 import { firmaSiparisOzetleri, siparisHesap } from "@/lib/siparis";
 import { dagitimToplamlari, kayitKalani, siparisOdemeSatirlari } from "@/lib/dagitim";
-import { tahsilatYap } from "@/lib/tahsilat";
+import { tahsilatPlani, tahsilatYap } from "@/lib/tahsilat";
 import { cariOzetleri, firmaTuru } from "@/lib/firma";
 import { addKasaKaydi, kaydiGeriAl } from "@/lib/db";
 import { tumHareketler, signed } from "@/lib/hareketler";
@@ -177,26 +177,38 @@ export default function KasaPage() {
     focusFirstEmptyDraft();
 
     try {
-      const toplam = Number(d.toplamTutar) || 0;
       const pesin = Number(d.alinanTutar) || 0;
-      // Firmadan para alındı ama satış yok (Toplam boş, yalnızca Peşin dolu): bu bir tahsilattır.
-      // Açık kalemlere eskiden yeniye dağıtılır; eskiden böyle bir giriş cariye hiç yansımıyordu.
-      if (d.firmaId && d.yon === "gelen" && toplam <= 0 && pesin > 0) {
-        const { id, mesaj } = await tahsilatYap(
-          {
-            firmaId: d.firmaId,
-            firma: d.firma.trim(),
-            tarih: d.tarih,
-            tutar: pesin,
-            odemeSekli: d.odemeSekli,
-            bankaHesapId: d.bankaHesapId,
-            kartAciklama: d.kartAciklama,
-            aciklama: d.aciklama.trim(),
-          },
-          { kayitlar, siparisler }
-        );
-        bildirimGoster(id, d, mesaj);
-        return;
+      // Gider kalemine yapılan ödeme her zaman harcamadır, asla avans olmaz: Toplam boş
+      // bırakılırsa gider kendi tutarıyla doğup aynı anda kapanır (Toplam = Peşin), böylece gider
+      // kaleminin cari bakiyesi sıfır kalır ve kayıt aşağıdaki tahsilat yoluna hiç girmez.
+      const secilenFirma = firmalar.find((f) => f.id === d.firmaId);
+      const giderKalemi = !!secilenFirma && firmaTuru(secilenFirma) === "gider";
+      let toplam = Number(d.toplamTutar) || 0;
+      if (giderKalemi && toplam <= 0 && pesin > 0) toplam = pesin;
+      // Toplam boş, yalnızca Peşin dolu: satış / alış kalemi yok, yalnızca para hareketi var.
+      // Gelende tahsilat, gidende tedarikçiye ödeme — ikisi de aynı yoldan açık kalemlere
+      // dağıtılır (gelende eskiden yeniye, gidende çek / senet en yakın vadeden). Gidende açık
+      // borç yoksa dağıtılacak kalem olmadığı için kayıt peşin alış olur (Toplam = Peşin).
+      if (d.firmaId && toplam <= 0 && pesin > 0) {
+        const istek = {
+          firmaId: d.firmaId,
+          firma: d.firma.trim(),
+          tarih: d.tarih,
+          tutar: pesin,
+          odemeSekli: d.odemeSekli,
+          bankaHesapId: d.bankaHesapId,
+          kartAciklama: d.kartAciklama,
+          aciklama: d.aciklama.trim(),
+          yon: d.yon,
+        };
+        const baglam = { kayitlar, siparisler };
+        if (d.yon === "giden" && tahsilatPlani(istek, baglam).length === 0) {
+          toplam = pesin; // açık borç yok → peşin alış, aşağıdaki düz kayıt yolundan yazılır
+        } else {
+          const { id, mesaj } = await tahsilatYap(istek, baglam);
+          bildirimGoster(id, d, mesaj);
+          return;
+        }
       }
       const ref = await addKasaKaydi({
         tarih: d.tarih,
