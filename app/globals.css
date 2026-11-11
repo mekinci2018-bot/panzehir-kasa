@@ -593,6 +593,24 @@ body {
 .yazdir-tablo tr {
   break-inside: avoid;
 }
+/* Alacaklar yazdırma çıktısı: kalemin sipariş görseli (~40 px ≈ 1 cm). Görseli olmayan kalemde
+   aynı genişlikte boş alan kalır, böylece sütunlar kaymaz. */
+.yazdir-tablo .yazdir-gorsel-hucre {
+  width: 46px;
+  padding-right: 0;
+}
+.yazdir-tablo .yazdir-gorsel,
+.yazdir-tablo .yazdir-gorsel-bos {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+.yazdir-tablo .yazdir-gorsel {
+  object-fit: contain;
+  border: 1px solid #d9d9e0;
+  border-radius: 2px;
+  background: #fff;
+}
 .yazdir-tablo .sag {
   text-align: right;
   font-variant-numeric: tabular-nums;

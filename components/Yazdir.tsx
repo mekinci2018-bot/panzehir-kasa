@@ -16,11 +16,29 @@ export function yazdir(dosyaAdi: string) {
   document.title = eski;
 }
 
-export function YazdirButonu({ dosyaAdi }: { dosyaAdi: string }) {
+// `hazirla`: baskıdan önce beklenecek iş (Alacaklar'da küçük resimlerin yüklenmesi). Verilmezse
+// düğme eskisi gibi doğrudan yazdırır.
+export function YazdirButonu({ dosyaAdi, hazirla }: { dosyaAdi: string; hazirla?: () => Promise<void> }) {
+  const [bekliyor, setBekliyor] = useState(false);
   return (
     <button
-      className="btn-secondary inline-flex items-center gap-2 print:hidden"
-      onClick={() => yazdir(dosyaAdi)}
+      className="btn-secondary inline-flex items-center gap-2 print:hidden disabled:opacity-60"
+      disabled={bekliyor}
+      onClick={async () => {
+        if (!hazirla) {
+          yazdir(dosyaAdi);
+          return;
+        }
+        setBekliyor(true);
+        try {
+          await hazirla();
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setBekliyor(false);
+        }
+        yazdir(dosyaAdi);
+      }}
       title="Yazdır ya da yazıcı olarak 'PDF olarak kaydet'i seçin"
     >
       <Printer className="w-4 h-4" /> Yazdır / PDF

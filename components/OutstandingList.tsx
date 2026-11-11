@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle, ChevronRight, Handshake, Plus } from "lucide-react";
-import { kartOnerileri, useBankaHesaplari, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
+import { kartOnerileri, onizlemeGetir, useBankaHesaplari, useKasaKayitlari, useSiparisler } from "@/lib/hooks";
 import { addKasaKaydi, arsiveGonder, siparisKapat, tahsilEt } from "@/lib/db";
 import { siparisHesap } from "@/lib/siparis";
 import { dagitimToplamlari, kayitKalani } from "@/lib/dagitim";
@@ -166,6 +166,52 @@ export default function OutstandingList({
     () => sirala(items.filter((k) => aydaMi(k.tarih, ay) || aydanOnceMi(k.tarih, ay)), sira, KALEM_SUTUNLARI),
     [items, ay, sira]
   );
+  // Alacaklar'ın YAZDIRMA çıktısındaki küçük resimler. Yalnızca siparişin ≈200 px önizlemesi
+  // çekilir (büyük görsel hiç yüklenmez) ve baskıdan önce toplanır; ekran görünümü değişmez.
+  const gorselliYazdirma = yon === "gelen";
+  const [yazdirmaGorselleri, setYazdirmaGorselleri] = useState<Map<string, string>>(new Map());
+  const gorselIstegi = useRef<Promise<unknown>>(Promise.resolve());
+  const denenenGorseller = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (!gorselliYazdirma) return;
+    const eksik = [...new Set(gorunen.map((k) => k.siparis?.siparisGorselleri?.[0]).filter((id): id is string => !!id))].filter(
+      (id) => !denenenGorseller.current.has(id)
+    );
+    if (eksik.length === 0) return;
+    for (const id of eksik) denenenGorseller.current.add(id);
+    let iptal = false;
+    const istek = Promise.all(eksik.map(async (id) => [id, await onizlemeGetir(id)] as const)).then((ciftler) => {
+      if (iptal) return;
+      setYazdirmaGorselleri((eski) => {
+        const yeni = new Map(eski);
+        for (const [id, veri] of ciftler) if (veri) yeni.set(id, veri);
+        return yeni;
+      });
+    });
+    gorselIstegi.current = istek;
+    return () => {
+      iptal = true;
+    };
+  }, [gorselliYazdirma, gorunen]);
+
+  // Yazdırma, küçük resimler DOM'a girip yüklenmeden başlamasın: yarım resim basılmasın.
+  async function yazdirmayaHazirla() {
+    await gorselIstegi.current;
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    const imgler = [...document.querySelectorAll<HTMLImageElement>("img[data-yazdirma-gorseli]")];
+    await Promise.all(
+      imgler.map(
+        (img) =>
+          img.complete ||
+          new Promise<void>((r) => {
+            img.addEventListener("load", () => r(), { once: true });
+            img.addEventListener("error", () => r(), { once: true });
+          })
+      )
+    );
+  }
+
   const toplamlar = useMemo(() => {
     let buAy = 0;
     let devreden = 0;
@@ -341,7 +387,10 @@ export default function OutstandingList({
         <PageHeader title={title} description={subtitle} />
         <div className="flex flex-wrap items-center gap-3">
           <MonthNav monthKey={ay} onChange={setAy} />
-          <YazdirButonu dosyaAdi={`${title} - ${monthLabel(ay)}`} />
+          <YazdirButonu
+            dosyaAdi={`${title} - ${monthLabel(ay)}`}
+            hazirla={gorselliYazdirma ? yazdirmayaHazirla : undefined}
+          />
           <button className="btn-primary inline-flex items-center gap-2" onClick={() => setAdding(true)}>
             <Plus className="w-4 h-4" /> {newLabel}
           </button>
@@ -372,7 +421,13 @@ export default function OutstandingList({
         </div>
       )}
 
-      <YazdirmaListesi kalemler={gorunen} ay={ay} tutarBasligi={amountLabel} ekranSirasi={!!sira} />
+      <YazdirmaListesi
+        kalemler={gorunen}
+        ay={ay}
+        tutarBasligi={amountLabel}
+        ekranSirasi={!!sira}
+        gorseller={gorselliYazdirma ? yazdirmaGorselleri : undefined}
+      />
 
       {loading && items.length === 0 ? (
         <div className="card print:hidden">
@@ -755,12 +810,21 @@ function YazdirmaListesi({
   ay,
   tutarBasligi,
   ekranSirasi,
+  gorseller,
 }: {
   kalemler: AcikKalem[];
   ay: string;
   tutarBasligi: string;
   ekranSirasi: boolean;
+  // Yalnızca Alacaklar'da verilir: sipariş görseli id'si → önizleme (data URL). Verilmezse görsel
+  // sütunu hiç çıkmaz, yani Borçlar çıktısı aynen kalır.
+  gorseller?: Map<string, string>;
 }) {
+  const gorselli = !!gorseller;
+  const onizleme = (k: AcikKalem) => {
+    const id = k.siparis?.siparisGorselleri?.[0];
+    return id ? gorseller?.get(id) : undefined;
+  };
   const gruplar = new Map<string, { ad: string; kalemler: AcikKalem[] }>();
   for (const k of kalemler) {
     const anahtar = k.firmaId ?? (k.personelId ? `p-${k.personelId}` : `ad-${k.firma}`);
@@ -779,6 +843,7 @@ function YazdirmaListesi({
     <table className="yazdir-tablo hidden print:table mt-2">
       <thead>
         <tr>
+          {gorselli && <th className="yazdir-gorsel-hucre" aria-label="Görsel" />}
           <th className="w-[70px]">Tarih</th>
           <th>Açıklama</th>
           <th className="w-[70px]">Vade</th>
@@ -790,10 +855,21 @@ function YazdirmaListesi({
           const araToplam = g.kalemler.reduce((t, k) => t + k.kalan, 0);
           return [
             <tr key={`${g.ad}-b`} className="grup-basi">
-              <td colSpan={4}>{g.ad}</td>
+              <td colSpan={gorselli ? 5 : 4}>{g.ad}</td>
             </tr>,
             ...(ekranSirasi ? g.kalemler : [...g.kalemler].sort((a, b) => (a.tarih < b.tarih ? -1 : 1))).map((k) => (
                 <tr key={k.key}>
+                  {gorselli && (
+                    <td className="yazdir-gorsel-hucre">
+                      {/* Görseli olmayan kalemde (devir vb.) aynı genişlikte boş alan kalır. */}
+                      {onizleme(k) ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- Firestore'dan gelen data URL önizlemesi
+                        <img data-yazdirma-gorseli="" src={onizleme(k)} alt="" className="yazdir-gorsel" />
+                      ) : (
+                        <span className="yazdir-gorsel-bos" />
+                      )}
+                    </td>
+                  )}
                   <td className="tabular">{formatDate(k.tarih)}</td>
                   <td>
                     {k.aciklama || "—"}
@@ -805,13 +881,13 @@ function YazdirmaListesi({
                 </tr>
               )),
             <tr key={`${g.ad}-t`} className="ara-toplam">
-              <td colSpan={3}>Ara toplam · {g.kalemler.length} kalem</td>
+              <td colSpan={gorselli ? 4 : 3}>Ara toplam · {g.kalemler.length} kalem</td>
               <td className="sag">{formatTL(araToplam)}</td>
             </tr>,
           ];
         })}
         <tr className="genel-toplam">
-          <td colSpan={3}>Genel toplam · {sirali.length} firma, {kalemler.length} kalem</td>
+          <td colSpan={gorselli ? 4 : 3}>Genel toplam · {sirali.length} firma, {kalemler.length} kalem</td>
           <td className="sag">{formatTL(genelToplam)}</td>
         </tr>
       </tbody>
